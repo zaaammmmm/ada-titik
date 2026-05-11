@@ -1,6 +1,8 @@
-# Flutter Project
+# Ada Titik?
 
-Deskripsi singkat proyek Flutter Anda di sini.
+**ada titik?** adalah aplikasi *social donation mapping* berbasis lokasi yang bertujuan untuk menjembatani **donatur** dan **komunitas penyalur bantuan** secara transparan, akurat, dan efisien.
+
+Berbeda dengan platform donasi konvensional, aplikasi ini tidak hanya menghubungkan pemberi dan penerima bantuan, tetapi menghadirkan **sistem berbasis peta (map-based system)** yang memungkinkan distribusi bantuan dilakukan secara **tepat sasaran**.
 
 ## 🚀 Cara Memulai
 
