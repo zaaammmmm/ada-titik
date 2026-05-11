@@ -1,17 +1,48 @@
-# ada_titik
+# Flutter Project
 
-A new Flutter project.
+Deskripsi singkat proyek Flutter Anda di sini.
 
-## Getting Started
+## 🚀 Cara Memulai
 
-This project is a starting point for a Flutter application.
+Ikuti langkah-langkah di bawah ini untuk menjalankan proyek di perangkat lokal Anda.
 
-A few resources to get you started if this is your first Flutter project:
+### Prasyarat
+Pastikan Anda sudah menginstal:
+* **Flutter SDK**
+* **Dart SDK**
+* Emulator atau perangkat fisik yang sudah terhubung
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🛠️ Instalasi & Penggunaan
+
+### 1. Install Dependensi
+Clone terlebih dahulu repository ini:
+
+```bash
+git clone [https://github.com/username/nama-repo.git](https://github.com/zaaammmmm/ada-titik.git)
+cd ada-titik
+```
+
+### 2. Install Dependensi
+Sebelum menjalankan aplikasi, unduh semua library yang diperlukan dengan perintah:
+
+```bash
+flutter pub get
+```
+
+### 3. Jalankan Aplikasi
+Setelah dependensi terinstal, jalankan aplikasi menggunakan perintah:
+
+```bash
+flutter prun
+```
+
+## 💡 Catatan (Notes)
+* **Gunakan flutter pub get setiap kali ada perubahan pada file pubspec.yaml**
+* **Jika terjadi kendala pada cache, Anda bisa mencoba menjalankan flutter clean terlebih dahulu**
+* **Pastikan koneksi internet stabil saat mengunduh dependensi**
+
+## 🏗️ Dibangun Dengan
+* **Flutter - UI Framework**
+* **Dart - Bahasa Pemrograman**
