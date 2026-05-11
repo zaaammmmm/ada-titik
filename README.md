@@ -22,7 +22,7 @@ Pastikan Anda sudah menginstal:
 Clone terlebih dahulu repository ini:
 
 ```bash
-git clone [https://github.com/username/nama-repo.git](https://github.com/zaaammmmm/ada-titik.git)
+git clone https://github.com/zaaammmmm/ada-titik.git
 cd ada-titik
 ```
 
