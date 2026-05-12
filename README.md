@@ -22,7 +22,8 @@ Pastikan Anda sudah menginstal:
 Clone terlebih dahulu repository ini:
 
 ```bash
-git clone https://github.com/zaaammmmm/ada-titik.git
+git clone https://github.com/zaaammmmm/ada-titik.git <-- main branch
+git clone -b development https://github.com/zaaammmmm/ada-titik.git <-- development branch
 cd ada-titik
 ```
 
@@ -37,7 +38,7 @@ flutter pub get
 Setelah dependensi terinstal, jalankan aplikasi menggunakan perintah:
 
 ```bash
-flutter prun
+flutter run
 ```
 
 ## 💡 Catatan (Notes)
