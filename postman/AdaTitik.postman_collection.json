@@ -1,0 +1,1111 @@
+{
+  "info": {
+    "name": "Titik Baik API",
+    "description": "Koleksi lengkap endpoint backend Titik Baik – Social Donation Mapping.\n\n**Cara Pakai:**\n1. Import file environment `TitikBaik.postman_environment.json` terlebih dahulu\n2. Aktifkan environment 'Titik Baik – Development'\n3. Jalankan request **Login** (salah satu role) — token akan tersimpan otomatis\n4. Jalankan **Buat Titik Bantuan** — `point_id` tersimpan otomatis\n5. Lanjutkan pengujian endpoint lainnya\n\n**Role yang tersedia (jika sudah seed):**\n- `admin@titikbaik.id` → admin\n- `komunitas@example.com` → komunitas\n- `donatur@example.com` → donatur\n- Password semua: `password123`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+
+    {
+      "name": "🔐 Auth",
+      "description": "Registrasi, login, dan cek token JWT.",
+      "item": [
+
+        {
+          "name": "Register – Donatur",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Budi Santoso\",\n  \"email\": \"budi@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"donatur\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
+            "description": "Daftarkan akun baru dengan role **donatur**.\n\n**Validasi:**\n- `name` wajib, maks 100 karakter\n- `email` harus format email valid\n- `password` minimal 8 karakter\n- `role` hanya boleh `donatur` atau `komunitas`\n\n**Response 201:** userId\n**Response 400:** validasi gagal\n**Response 409:** email sudah terdaftar"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 201\", () => pm.response.to.have.status(201));",
+              "pm.test(\"Response punya userId\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('userId');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Register – Komunitas",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Komunitas Peduli Yogya\",\n  \"email\": \"komunitas2@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"komunitas\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
+            "description": "Daftarkan akun baru dengan role **komunitas**."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 201\", () => pm.response.to.have.status(201));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Register – Validasi Gagal (role salah)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test\",\n  \"email\": \"test@example.com\",\n  \"password\": \"pass\",\n  \"role\": \"superadmin\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
+            "description": "Uji validasi: password terlalu pendek dan role tidak valid.\n\n**Expected:** 400 dengan `details` array berisi field yang error."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 400\", () => pm.response.to.have.status(400));",
+              "pm.test(\"Ada field details\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('details');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Login – Donatur ⚡ (auto-save token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"donatur@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] },
+            "description": "Login sebagai **donatur**.\n\nToken JWT akan **otomatis tersimpan** ke environment variable `token` sehingga semua request berikutnya langsung terautentikasi.\n\n**Response 200:** token + data user\n**Response 401:** email/password salah"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada token\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('token');",
+              "});",
+              "if (pm.response.code === 200) {",
+              "    const body = pm.response.json();",
+              "    pm.environment.set('token', body.token);",
+              "    console.log('✅ Token donatur tersimpan. Role:', body.user.role);",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Login – Komunitas ⚡ (auto-save token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"komunitas@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] },
+            "description": "Login sebagai **komunitas**. Token tersimpan otomatis ke `{{token}}`."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "    pm.environment.set('token', pm.response.json().token);",
+              "    console.log('✅ Token komunitas tersimpan');",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Login – Admin ⚡ (auto-save token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@titikbaik.id\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] },
+            "description": "Login sebagai **admin**. Token tersimpan otomatis ke `{{token}}`."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "    pm.environment.set('token', pm.response.json().token);",
+              "    console.log('✅ Token admin tersimpan');",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Login – Password Salah",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"donatur@example.com\",\n  \"password\": \"salah123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/auth/login", "host": ["{{base_url}}"], "path": ["api","auth","login"] },
+            "description": "Uji login dengan password yang salah.\n\n**Expected:** 401"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 401\", () => pm.response.to.have.status(401));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Cek Token (GET /me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/auth/me", "host": ["{{base_url}}"], "path": ["api","auth","me"] },
+            "description": "Verifikasi token JWT masih valid dan lihat payload-nya (userId, role).\n\n**Expected:** 200 + data user dari token\n**Response 401:** token tidak ada / kadaluarsa"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada field user\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('user');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "📍 Donations",
+      "description": "Kelola titik bantuan: lihat, buat, edit, update status.",
+      "item": [
+
+        {
+          "name": "Lihat Semua Titik (default: Open)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/donations", "host": ["{{base_url}}"], "path": ["api","donations"] },
+            "description": "Ambil semua titik bantuan berstatus **Open** (default).\n\nResponse mengandung `pagination` dan `data`."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada pagination\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('pagination');",
+              "});",
+              "pm.test(\"Ada data array\", () => {",
+              "    pm.expect(pm.response.json().data).to.be.an('array');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Filter by Urgency – Mendesak",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations?urgency=Mendesak",
+              "host": ["{{base_url}}"], "path": ["api","donations"],
+              "query": [{ "key": "urgency", "value": "Mendesak", "description": "Mendesak | Normal | Rendah" }]
+            },
+            "description": "Filter titik berdasarkan tingkat urgensi.\n\n**Nilai valid:** `Mendesak`, `Normal`, `Rendah`"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Semua data urgency Mendesak\", () => {",
+              "    const data = pm.response.json().data;",
+              "    data.forEach(item => pm.expect(item.urgency).to.equal('Mendesak'));",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Filter by Status – On Progress",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations?status=On Progress",
+              "host": ["{{base_url}}"], "path": ["api","donations"],
+              "query": [{ "key": "status", "value": "On Progress", "description": "Open | On Progress | Completed" }]
+            },
+            "description": "Tampilkan titik bantuan yang sedang dalam proses.\n\n**Nilai valid:** `Open`, `On Progress`, `Completed`"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Cari by Keyword (?search=)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations?search=banjir",
+              "host": ["{{base_url}}"], "path": ["api","donations"],
+              "query": [{ "key": "search", "value": "banjir", "description": "Cari di title dan description (case-insensitive)" }]
+            },
+            "description": "Full-text search pada `title` dan `description` menggunakan ILIKE.\n\nContoh: `?search=banjir` akan menemukan 'Korban Banjir Kali Code'."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Pagination (?page=&limit=)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations?page=1&limit=2",
+              "host": ["{{base_url}}"], "path": ["api","donations"],
+              "query": [
+                { "key": "page",  "value": "2",  "description": "Halaman ke-n (default: 1)" },
+                { "key": "limit", "value": "2", "description": "Jumlah per halaman (default: 10, maks: 100)" }
+              ]
+            },
+            "description": "Uji pagination: ambil 2 data per halaman.\n\nResponse `pagination` berisi `total`, `total_pages`, `current_page`, `limit`."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Data maks 2 item\", () => {",
+              "    pm.expect(pm.response.json().data.length).to.be.at.most(2);",
+              "});",
+              "pm.test(\"Pagination ada total_pages\", () => {",
+              "    pm.expect(pm.response.json().pagination).to.have.property('total_pages');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Gabung Filter + Search + Pagination",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations?urgency=Normal&page=1&limit=5&search=yogya",
+              "host": ["{{base_url}}"], "path": ["api","donations"],
+              "query": [
+                { "key": "urgency", "value": "Normal" },
+                { "key": "page",    "value": "1" },
+                { "key": "limit",   "value": "5" },
+                { "key": "search",  "value": "yogya" }
+              ]
+            },
+            "description": "Kombinasikan semua filter sekaligus."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Filter Urgency Tidak Valid",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations?urgency=SangatMendesak",
+              "host": ["{{base_url}}"], "path": ["api","donations"],
+              "query": [{ "key": "urgency", "value": "SangatMendesak" }]
+            },
+            "description": "Uji nilai urgency yang tidak valid.\n\n**Expected:** 400"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 400\", () => pm.response.to.have.status(400));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Detail Titik by ID",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations/{{point_id}}",
+              "host": ["{{base_url}}"], "path": ["api","donations","{{point_id}}"]
+            },
+            "description": "Ambil detail satu titik bantuan beserta:\n- Koordinat (longitude, latitude)\n- Nama pembuat\n- Rata-rata rating & jumlah rating\n- Jumlah dokumentasi foto\n\n**Expected:** 200\n**Expected jika tidak ada:** 404"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200 atau 404\", () => {",
+              "    pm.expect([200, 404]).to.include(pm.response.code);",
+              "});",
+              "if (pm.response.code === 200) {",
+              "    pm.test(\"Ada avg_rating\", () => {",
+              "        pm.expect(pm.response.json().data).to.have.property('avg_rating');",
+              "    });",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Detail Titik – ID Tidak Ada",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/donations/99999",
+              "host": ["{{base_url}}"], "path": ["api","donations","99999"]
+            },
+            "description": "Uji akses titik yang tidak ada.\n\n**Expected:** 404"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 404\", () => pm.response.to.have.status(404));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Titik Terdekat (Nearby) 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/donations/nearby?lat={{user_lat}}&lng={{user_lng}}&radius=5000",
+              "host": ["{{base_url}}"], "path": ["api","donations","nearby"],
+              "query": [
+                { "key": "lat",    "value": "{{user_lat}}", "description": "Latitude posisi user" },
+                { "key": "lng",    "value": "{{user_lng}}", "description": "Longitude posisi user" },
+                { "key": "radius", "value": "5000",          "description": "Radius dalam meter" }
+              ]
+            },
+            "description": "Cari titik bantuan dalam radius tertentu dari posisi user (koordinat default: Yogyakarta).\n\nHasilnya diurutkan dari yang terdekat. Butuh **JWT token**."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada distance_meters\", () => {",
+              "    const data = pm.response.json().data;",
+              "    if (data.length > 0) pm.expect(data[0]).to.have.property('distance_meters');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Buat Titik Bantuan ⚡ (auto-save point_id) 🔑",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Bantuan Sembako Pasca Banjir\",\n  \"description\": \"Warga RT 05/RW 02 membutuhkan sembako dan pakaian layak pakai.\",\n  \"longitude\": 110.3695,\n  \"latitude\": -7.7956,\n  \"urgency\": \"Mendesak\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/donations", "host": ["{{base_url}}"], "path": ["api","donations"] },
+            "description": "Buat titik bantuan baru. **Hanya role komunitas.**\n\n`point_id` dari response akan **otomatis tersimpan** ke environment untuk digunakan di request berikutnya.\n\n**Field wajib:** `title`, `longitude`, `latitude`\n**Field opsional:** `description`, `urgency` (default: Normal)"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 201\", () => pm.response.to.have.status(201));",
+              "if (pm.response.code === 201) {",
+              "    const id = pm.response.json().data.id;",
+              "    pm.environment.set('point_id', id);",
+              "    console.log('✅ point_id tersimpan:', id);",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Buat Titik – Koordinat Tidak Diisi",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Bantuan tanpa koordinat\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/donations", "host": ["{{base_url}}"], "path": ["api","donations"] },
+            "description": "Uji validasi: koordinat wajib diisi.\n\n**Expected:** 400"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 400\", () => pm.response.to.have.status(400));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Edit Titik Bantuan 🔑",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Bantuan Sembako Pasca Banjir (Updated)\",\n  \"urgency\": \"Normal\",\n  \"description\": \"Situasi sudah membaik, bantuan tetap diperlukan.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/donations/{{point_id}}", "host": ["{{base_url}}"], "path": ["api","donations","{{point_id}}"] },
+            "description": "Edit `title`, `description`, dan/atau `urgency` titik bantuan.\n\n**Hanya pengelola (komunitas yang membuat) yang bisa edit.**\n- Minimal satu field harus diisi\n- Tidak bisa edit `location` dan `status` (gunakan endpoint status)\n\n**Expected:** 200\n**Expected jika bukan pengelola:** 403"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200 atau 403\", () => {",
+              "    pm.expect([200, 403]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Update Status → On Progress 🔑",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"On Progress\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/donations/{{point_id}}/status", "host": ["{{base_url}}"], "path": ["api","donations","{{point_id}}","status"] },
+            "description": "Donatur atau komunitas menandai titik sebagai **On Progress** (sedang ditangani).\n\nTidak memerlukan koordinat user.\n\n**Expected:** 200\n**Catatan:** Hanya titik berstatus `Open` yang bisa diubah ke `On Progress`."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200 atau 400\", () => {",
+              "    pm.expect([200, 400]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Update Status → Completed (Geo-fencing) 🔑",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Completed\",\n  \"user_lat\": -7.7956,\n  \"user_lng\": 110.3695\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/donations/{{point_id}}/status", "host": ["{{base_url}}"], "path": ["api","donations","{{point_id}}","status"] },
+            "description": "Komunitas pengelola menandai titik sebagai **Completed**.\n\n**Syarat:**\n1. Status titik harus `On Progress`\n2. User yang request harus pembuat titik\n3. `user_lat` & `user_lng` wajib diisi\n4. Jarak user ke titik ≤ 100 meter (geo-fencing)\n\n**Expected 403 jika jarak > 100m** atau bukan pengelola."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200, 400, atau 403\", () => {",
+              "    pm.expect([200, 400, 403]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "📸 Documentation",
+      "description": "Upload dan lihat bukti foto distribusi bantuan.",
+      "item": [
+
+        {
+          "name": "Lihat Dokumentasi by Point",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/documentation/{{point_id}}", "host": ["{{base_url}}"], "path": ["api","documentation","{{point_id}}"] },
+            "description": "Ambil semua foto dokumentasi untuk titik bantuan tertentu.\n\nButuh login (semua role)."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada field count\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('count');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Upload Dokumentasi (Foto) 🔑",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "point_id", "value": "{{point_id}}", "type": "text",         "description": "ID titik bantuan" },
+                { "key": "caption",  "value": "Distribusi sembako hari pertama",       "type": "text",         "description": "Keterangan foto (opsional)" },
+                { "key": "photo",    "type": "file",  "src": "",                       "description": "File gambar (jpg/png/webp)" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/documentation", "host": ["{{base_url}}"], "path": ["api","documentation"] },
+            "description": "Upload foto bukti distribusi bantuan. **Hanya role komunitas.**\n\n**Form fields:**\n- `point_id` (wajib): ID titik bantuan\n- `photo` (wajib): file gambar — pilih file di tab Body > form-data\n- `caption` (opsional): keterangan foto\n\n⚠️ **Pastikan pilih file gambar di field `photo` sebelum send.**"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 201 atau 400\", () => {",
+              "    pm.expect([201, 400, 404]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "⭐ Ratings",
+      "description": "Sistem rating 1-5 dari donatur untuk titik bantuan.",
+      "item": [
+
+        {
+          "name": "Lihat Rating by Point 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/ratings/{{point_id}}", "host": ["{{base_url}}"], "path": ["api","ratings","{{point_id}}"] },
+            "description": "Lihat semua rating untuk sebuah titik bantuan beserta rata-ratanya.\n\nButuh login (semua role)."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada avg_score\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('avg_score');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Beri Rating 🔑",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"point_id\": {{point_id}},\n  \"score\": 5,\n  \"review\": \"Bantuan tepat sasaran dan distribusi berjalan lancar!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/ratings", "host": ["{{base_url}}"], "path": ["api","ratings"] },
+            "description": "Donatur memberikan rating 1-5 untuk titik bantuan.\n\n**Batasan:**\n- Hanya role **donatur**\n- Tidak bisa rating titik yang kamu buat sendiri\n- Hanya bisa rating 1x per titik (409 jika sudah)\n\n**Expected:** 201\n**Expected jika sudah pernah rating:** 409"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 201, 403, atau 409\", () => {",
+              "    pm.expect([201, 403, 409]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Rating – Score Tidak Valid",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"point_id\": {{point_id}},\n  \"score\": 10\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/ratings", "host": ["{{base_url}}"], "path": ["api","ratings"] },
+            "description": "Uji validasi: score maks 5.\n\n**Expected:** 400 dengan detail validasi."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 400\", () => pm.response.to.have.status(400));"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "🚨 Reports",
+      "description": "Donatur melaporkan titik bantuan yang diduga fiktif.",
+      "item": [
+
+        {
+          "name": "Laporkan Titik Bantuan 🔑",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"point_id\": {{point_id}},\n  \"reason\": \"Alamat tidak sesuai dengan yang tertera. Sudah dicek langsung ke lokasi.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/reports", "host": ["{{base_url}}"], "path": ["api","reports"] },
+            "description": "Donatur melaporkan titik bantuan yang diduga palsu atau tidak valid.\n\n**Hanya role donatur.**\n\nLaporan masuk ke antrian admin dengan status `pending`.\n\n**Expected:** 201"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 201 atau 403\", () => {",
+              "    pm.expect([201, 403]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Laporan – Reason Kosong",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"point_id\": {{point_id}},\n  \"reason\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/reports", "host": ["{{base_url}}"], "path": ["api","reports"] },
+            "description": "Uji validasi: alasan laporan tidak boleh kosong.\n\n**Expected:** 400"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 400\", () => pm.response.to.have.status(400));"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "👑 Admin",
+      "description": "Fitur moderasi eksklusif admin. Login sebagai admin sebelum menggunakan folder ini.",
+      "item": [
+
+        {
+          "name": "Lihat Semua Laporan 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/admin/reports", "host": ["{{base_url}}"], "path": ["api","admin","reports"] },
+            "description": "Lihat semua laporan dari donatur dengan pagination.\n\n**Hanya admin.**"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200 atau 403\", () => {",
+              "    pm.expect([200, 403]).to.include(pm.response.code);",
+              "});",
+              "if (pm.response.code === 200) {",
+              "    const body = pm.response.json();",
+              "    if (body.data.length > 0) {",
+              "        pm.environment.set('report_id', body.data[0].report_id);",
+              "        console.log('✅ report_id tersimpan:', body.data[0].report_id);",
+              "    }",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Filter Laporan – Pending 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports?status=pending&page=1&limit=10",
+              "host": ["{{base_url}}"], "path": ["api","admin","reports"],
+              "query": [
+                { "key": "status", "value": "pending", "description": "pending | resolved | dismissed" },
+                { "key": "page",   "value": "1" },
+                { "key": "limit",  "value": "10" }
+              ]
+            },
+            "description": "Filter laporan berdasarkan status.\n\n**Nilai valid:** `pending`, `resolved`, `dismissed`"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200 atau 403\", () => {",
+              "    pm.expect([200, 403]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Verifikasi Laporan – Resolved 🔑",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"resolved\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/admin/reports/{{report_id}}", "host": ["{{base_url}}"], "path": ["api","admin","reports","{{report_id}}"] },
+            "description": "Admin memverifikasi laporan sebagai **resolved** (terbukti valid) atau **dismissed** (tidak terbukti).\n\n**Nilai valid:** `resolved`, `dismissed`\n\n**Expected:** 200"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200, 403, atau 404\", () => {",
+              "    pm.expect([200, 403, 404]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Verifikasi Laporan – Dismissed 🔑",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"dismissed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/admin/reports/{{report_id}}", "host": ["{{base_url}}"], "path": ["api","admin","reports","{{report_id}}"] },
+            "description": "Tolak laporan (tidak terbukti)."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200, 403, atau 404\", () => {",
+              "    pm.expect([200, 403, 404]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Statistik Sistem 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/admin/stats", "host": ["{{base_url}}"], "path": ["api","admin","stats"] },
+            "description": "Dashboard monitoring admin.\n\n**Response berisi:**\n- `total_users`: total pengguna terdaftar\n- `total_points`: total titik aktif (non-deleted)\n- `completed_points`: titik yang sudah selesai\n- `pending_reports`: laporan yang belum diverifikasi"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200 atau 403\", () => {",
+              "    pm.expect([200, 403]).to.include(pm.response.code);",
+              "});",
+              "if (pm.response.code === 200) {",
+              "    pm.test(\"Ada semua field statistik\", () => {",
+              "        const d = pm.response.json().data;",
+              "        pm.expect(d).to.have.all.keys('total_users','total_points','completed_points','pending_reports');",
+              "    });",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Hapus Titik (Soft Delete) 🔑",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/admin/points/{{point_id}}", "host": ["{{base_url}}"], "path": ["api","admin","points","{{point_id}}"] },
+            "description": "Admin menghapus titik bantuan yang tidak valid.\n\n⚠️ **Soft delete** — titik tidak benar-benar dihapus dari database, hanya disembunyikan dari tampilan publik (set `deleted_at`).\n\n**Expected:** 200\n**Expected jika sudah dihapus:** 404"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200, 403, atau 404\", () => {",
+              "    pm.expect([200, 403, 404]).to.include(pm.response.code);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Akses Admin Tanpa Token",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/stats", "host": ["{{base_url}}"], "path": ["api","admin","stats"] },
+            "description": "Uji proteksi route admin tanpa token.\n\n**Expected:** 401"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 401\", () => pm.response.to.have.status(401));"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "📊 Analytics",
+      "description": "Endpoint publik untuk statistik dan data heatmap.",
+      "item": [
+
+        {
+          "name": "Summary Statistik (Publik)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/analytics/stats", "host": ["{{base_url}}"], "path": ["api","analytics","stats"] },
+            "description": "Jumlah titik per status (Open, On Progress, Completed).\n\n**Publik — tidak butuh token.**"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada field data\", () => {",
+              "    pm.expect(pm.response.json().data).to.be.an('array');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Data Heatmap (Publik)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/analytics/heatmap", "host": ["{{base_url}}"], "path": ["api","analytics","heatmap"] },
+            "description": "Koordinat semua titik Open beserta weight untuk visualisasi heatmap di Flutter.\n\n- `weight: 3` → Mendesak\n- `weight: 2` → Normal\n- `weight: 1` → Rendah\n\n**Publik — tidak butuh token.**"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Data punya longitude, latitude, weight\", () => {",
+              "    const data = pm.response.json().data;",
+              "    if (data.length > 0) {",
+              "        pm.expect(data[0]).to.have.all.keys('longitude','latitude','weight');",
+              "    }",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "🔔 Notifications",
+      "description": "Notifikasi titik bantuan terdekat dari posisi user.",
+      "item": [
+
+        {
+          "name": "Notifikasi Bantuan Terdekat 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/notifications/nearby?lat={{user_lat}}&lng={{user_lng}}&radius=5000",
+              "host": ["{{base_url}}"], "path": ["api","notifications","nearby"],
+              "query": [
+                { "key": "lat",    "value": "{{user_lat}}", "description": "Latitude posisi user" },
+                { "key": "lng",    "value": "{{user_lng}}", "description": "Longitude posisi user" },
+                { "key": "radius", "value": "5000",          "description": "Radius dalam meter (default: 5000)" }
+              ]
+            },
+            "description": "Ambil maks 5 titik bantuan Open terdekat untuk notifikasi.\n\nData diurutkan berdasarkan waktu dibuat (terbaru) bukan jarak — cocok untuk push notification.\n\n**Butuh login.**"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Maks 5 notifikasi\", () => {",
+              "    pm.expect(pm.response.json().data.length).to.be.at.most(5);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    },
+
+    {
+      "name": "👤 Users",
+      "description": "Manajemen profil pengguna dan riwayat aktivitas.",
+      "item": [
+
+        {
+          "name": "Lihat Profil Saya 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{base_url}}/api/users/profile", "host": ["{{base_url}}"], "path": ["api","users","profile"] },
+            "description": "Ambil data profil user yang sedang login.\n\n**Response:** id, name, email, role, bio, created_at"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada field role\", () => {",
+              "    pm.expect(pm.response.json().data).to.have.property('role');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Update Profil 🔑",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Budi Santoso (Updated)\",\n  \"bio\": \"Aktif membantu masyarakat sekitar Yogyakarta sejak 2023.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/users/profile", "host": ["{{base_url}}"], "path": ["api","users","profile"] },
+            "description": "Update nama dan bio profil.\n\n**Field:**\n- `name` (wajib, maks 100 karakter)\n- `bio` (opsional, maks 500 karakter)"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Nama terupdate\", () => {",
+              "    pm.expect(pm.response.json().data.name).to.equal('Budi Santoso (Updated)');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Update Profil – Nama Kosong",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/users/profile", "host": ["{{base_url}}"], "path": ["api","users","profile"] },
+            "description": "Uji validasi: nama tidak boleh kosong.\n\n**Expected:** 400"
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 400\", () => pm.response.to.have.status(400));"
+            ], "type": "text/javascript" }
+          }]
+        },
+
+        {
+          "name": "Riwayat Aktivitas 🔑",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/users/activity?page=1&limit=10",
+              "host": ["{{base_url}}"], "path": ["api","users","activity"],
+              "query": [
+                { "key": "page",  "value": "1" },
+                { "key": "limit", "value": "10" }
+              ]
+            },
+            "description": "Riwayat aktivitas user berdasarkan role:\n\n- **Donatur:** daftar rating yang pernah diberikan (beserta nama titik & status)\n- **Komunitas / Admin:** daftar titik bantuan yang pernah dibuat\n\nResponse mengandung `pagination`."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test(\"Status harus 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Ada pagination\", () => {",
+              "    pm.expect(pm.response.json()).to.have.property('pagination');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+
+      ]
+    }
+
+  ]
+}

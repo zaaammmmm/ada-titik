@@ -24,6 +24,11 @@ dependencies:
   # State Management
   flutter_riverpod: ^2.5.1
 
+  # Networking & Storage
+  dio: ^5.7.0
+  shared_preferences: ^2.3.2
+
+
   # Maps
   google_maps_flutter: ^2.6.0
 
@@ -35,6 +40,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+
 
 flutter:
   uses-material-design: true

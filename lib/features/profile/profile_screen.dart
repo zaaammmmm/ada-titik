@@ -1,90 +1,130 @@
 // lib/features/profile/profile_screen.dart
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
+
 import '../donation/donation_history_screen.dart';
+import '../../shared/widgets/app_widgets.dart';
+import '../notification/notification_screen.dart';
+
+import '../../core/network/auth_storage.dart';
+import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final user = MockData.currentUser;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(context),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildProfileCard(context, user),
-            const SizedBox(height: 12),
-            _buildQuickLinks(context),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Your Impact', style: AppTextStyles.headlineMedium),
-            ),
-            const SizedBox(height: 12),
-            _buildImpactCards(user),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Recent Activity', style: AppTextStyles.headlineMedium),
-                  TextButton(
-                    onPressed: () {},
-                    child: Text(
-                      'View All',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+    final repo = DonationRepository();
+
+    return FutureBuilder<UserModel>(
+      future: repo.getProfile(),
+      builder: (context, snapshot) {
+        final state = snapshot.connectionState;
+
+        if (state == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.background,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            appBar: AdaTitikAppBar(
+              onNotification: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const NotificationScreen(),
                   ),
-                ],
+                );
+              },
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load profile',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            _buildRecentActivity(),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
+          );
+        }
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AdaTitikAppBar(
+            onNotification: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const NotificationScreen(),
+                ),
+              );
+            },
+          ),
+          body: _ProfileContent(user: snapshot.data!),
+        );
+      },
     );
   }
+}
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
-    return AppBar(
-      backgroundColor: AppColors.surface,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      leading: Padding(
-        padding: const EdgeInsets.all(8),
-        child: CircleAvatar(
-          radius: 18,
-          backgroundImage: const NetworkImage(
-            'https://i.pravatar.cc/150?img=12',
+class _ProfileContent extends StatelessWidget {
+  final UserModel user;
+  const _ProfileContent({required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildProfileCard(context, user),
+          const SizedBox(height: 12),
+          _buildQuickLinks(context),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Your Impact', style: AppTextStyles.headlineMedium),
           ),
-          backgroundColor: AppColors.primaryContainer,
-        ),
+          const SizedBox(height: 12),
+          _buildImpactCards(user),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Recent Activity', style: AppTextStyles.headlineMedium),
+                TextButton(
+                  onPressed: () {},
+                  child: Text(
+                    'View All',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          _buildRecentActivity(),
+          const SizedBox(height: 24),
+          _buildLogoutButton(context),
+          const SizedBox(height: 24),
+        ],
       ),
-      title: Text(
-        'Ada Titik?',
-        style: AppTextStyles.brandTitle.copyWith(fontSize: 22),
-      ),
-      centerTitle: true,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.notifications_outlined),
-          color: AppColors.textPrimary,
-          onPressed: () {},
-        ),
-      ],
     );
   }
 
@@ -140,7 +180,7 @@ class ProfileScreen extends StatelessWidget {
               Icon(Icons.verified, color: AppColors.primary, size: 16),
               const SizedBox(width: 4),
               Text(
-                'Verified Member',
+                user.isVerified ? 'Verified Member' : 'Member',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w600,
@@ -185,7 +225,9 @@ class ProfileScreen extends StatelessWidget {
         label: 'Riwayat Donasi',
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const DonationHistoryScreen()),
+          MaterialPageRoute(
+            builder: (_) => const DonationHistoryScreen(),
+          ),
         ),
       ),
       _QuickLink(
@@ -266,7 +308,7 @@ class ProfileScreen extends StatelessWidget {
           _ImpactCard(
             icon: Icons.account_balance_wallet_outlined,
             label: 'Total Donasi',
-            value: 'Rp 2.5M',
+            value: 'Rp ${user.totalDonation.toStringAsFixed(0)}',
             sub: 'Lifetime contribution',
             iconColor: AppColors.primary,
             iconBg: AppColors.primaryContainer,
@@ -295,6 +337,8 @@ class ProfileScreen extends StatelessWidget {
   }
 
   Widget _buildRecentActivity() {
+    // Belum ada endpoint recent activity di Step 5 ini.
+    // Tetap mempertahankan UI sementara.
     final items = [
       _ActivityEntry(
         icon: Icons.inventory_2_outlined,
@@ -369,15 +413,9 @@ class ProfileScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              item.title,
-                              style: AppTextStyles.titleSmall,
-                            ),
+                            Text(item.title, style: AppTextStyles.titleSmall),
                             const SizedBox(height: 2),
-                            Text(
-                              item.subtitle,
-                              style: AppTextStyles.bodySmall,
-                            ),
+                            Text(item.subtitle, style: AppTextStyles.bodySmall),
                             const SizedBox(height: 6),
                             Row(
                               children: [
@@ -399,10 +437,7 @@ class ProfileScreen extends StatelessWidget {
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                Text(
-                                  item.date,
-                                  style: AppTextStyles.bodySmall,
-                                ),
+                                Text(item.date, style: AppTextStyles.bodySmall),
                               ],
                             ),
                           ],
@@ -422,10 +457,48 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
+Widget _buildLogoutButton(BuildContext context) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: () async {
+          await AuthStorage.clear();
+
+          if (!context.mounted) return;
+
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => const LoginScreen(),
+            ),
+            (_) => false,
+          );
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red.shade700,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Text(
+          'Logout',
+          style: AppTextStyles.buttonMedium.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class _QuickLink {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+
   const _QuickLink({
     required this.icon,
     required this.label,
@@ -482,10 +555,7 @@ class _ImpactCard extends StatelessWidget {
                       child: Icon(icon, color: iconColor, size: 18),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: AppTextStyles.captionUppercase,
-                    ),
+                    Text(label, style: AppTextStyles.captionUppercase),
                   ],
                 ),
                 const SizedBox(height: 8),

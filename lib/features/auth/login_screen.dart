@@ -1,7 +1,12 @@
 // lib/features/auth/login_screen.dart
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/network/api_client.dart';
+import '../../core/network/auth_storage.dart';
+import '../../features/admin/admin_screen.dart';
+import '../../features/donation/data/donation_repository.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../../shared/widgets/main_scaffold.dart';
 import 'register_screen.dart';
@@ -17,11 +22,70 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscurePass = true;
+  bool _isLoading = false;
 
-  void _login() {
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => const MainScaffold()));
+  Future<void> _login() async {
+    final email = _emailCtrl.text.trim();
+    final password = _passCtrl.text;
+    final navigator = Navigator.of(context);
+
+    if (email.isEmpty || password.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final res = await ApiClient.post<Map<String, dynamic>>(
+        '/api/auth/login',
+        data: {
+          'email': email,
+          'password': password,
+        },
+      );
+
+      if (res.statusCode == 200) {
+        final token = res.data?['token'];
+        if (token is String && token.isNotEmpty) {
+          await AuthStorage.writeToken(token);
+        }
+
+        Widget nextScreen = const MainScaffold();
+
+        try {
+          final profile = await DonationRepository().getProfile();
+          if (profile.isAdmin) {
+            nextScreen = const AdminScreen();
+          }
+        } catch (_) {
+          // Fallback to default main scaffold if profile fetch fails.
+        }
+
+        if (!mounted) return;
+        navigator.pushReplacement(
+          MaterialPageRoute(builder: (_) => nextScreen),
+        );
+      } else {
+        _showError('Login gagal (${res.statusCode})');
+      }
+    } catch (e) {
+      _showError('Login gagal. Periksa koneksi/URL backend.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showError(String msg) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Login'),
+        content: Text(msg),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -55,8 +119,12 @@ class _LoginScreenState extends State<LoginScreen> {
               // Form
               _buildForm(),
               const SizedBox(height: 20),
-              // Login button
-              ElevatedButton(onPressed: _login, child: const Text('Login')),
+// Login button
+              ElevatedButton(
+                onPressed: _isLoading ? null : _login,
+                child: Text(_isLoading ? 'Logging in...' : 'Login'),
+              ),
+
               const SizedBox(height: 24),
               // Divider
               Row(

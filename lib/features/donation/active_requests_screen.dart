@@ -2,8 +2,9 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import 'data/donation_repository.dart';
 import '../../shared/models/models.dart';
+
 import '../../shared/widgets/app_widgets.dart';
 import 'request_detail_screen.dart';
 
@@ -81,7 +82,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Showing ${MockData.activeRequests.length} requests near you',
+                  'Loading requests from backend...',
                   style: AppTextStyles.bodySmall,
                 ),
               ],
@@ -89,21 +90,56 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              itemCount: MockData.activeRequests.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final req = MockData.activeRequests[index];
-                return _RequestCard(
-                  request: req,
-                  isNearest: index == 0,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => RequestDetailScreen(request: req),
+            child: FutureBuilder<List<DonationRequest>>(
+              future: DonationRepository().getAll(
+                status: RequestStatus.open,
+                page: 1,
+                limit: 20,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Failed to load requests',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
-                  ),
+                  );
+                }
+                final requests = snapshot.data ?? [];
+                if (requests.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'No requests found',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  itemCount: requests.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final req = requests[index];
+                    return _RequestCard(
+                      request: req,
+                      isNearest: index == 0,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RequestDetailScreen(request: req),
+                        ),
+                      ),
+                    );
+                  },
                 );
               },
             ),

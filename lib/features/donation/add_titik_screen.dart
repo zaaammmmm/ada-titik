@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/models/models.dart';
+import '../../core/network/api_client.dart';
+import 'data/donation_repository.dart';
 
 class AddTitikScreen extends StatefulWidget {
   const AddTitikScreen({super.key});
@@ -12,7 +14,31 @@ class AddTitikScreen extends StatefulWidget {
 }
 
 class _AddTitikScreenState extends State<AddTitikScreen> {
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _goalController = TextEditingController();
   UrgencyLevel _selectedUrgency = UrgencyLevel.urgent;
+  double _latitude = -7.7956;
+  double _longitude = 110.3695;
+
+  final _repository = const DonationRepository();
+
+  Future<void> _createDonation() async {
+    final title = _titleController.text.trim();
+    final description = _descriptionController.text.trim();
+    if (title.isEmpty || description.isEmpty) {
+      throw Exception('Title and description are required');
+    }
+
+    await _repository.createDonation(
+      title: title,
+      description: description,
+      latitude: _latitude,
+      longitude: _longitude,
+      urgency: _selectedUrgency,
+      category: 'Umum',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +97,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   _sectionLabel('Title of Need'),
                   const SizedBox(height: 8),
                   TextFormField(
+                    controller: _titleController,
                     decoration: const InputDecoration(
                       hintText: 'e.g., Bottled water needed for 5 families',
                       filled: true,
@@ -82,6 +109,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   _sectionLabel('Goals'),
                   const SizedBox(height: 8),
                   TextFormField(
+                    controller: _goalController,
                     decoration: const InputDecoration(
                       hintText: 'e.g., 10Kg',
                       filled: true,
@@ -93,6 +121,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   _sectionLabel('Description'),
                   const SizedBox(height: 8),
                   TextFormField(
+                    controller: _descriptionController,
                     maxLines: 4,
                     decoration: const InputDecoration(
                       hintText: 'Provide details about the situation...',
@@ -134,7 +163,22 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   const SizedBox(height: 24),
                   // Publish button
                   ElevatedButton.icon(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () async {
+                      try {
+                        await _createDonation();
+                        if (!context.mounted) return;
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Titik berhasil dibuat!')),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal membuat titik: $e')),
+                        );
+                      }
+                    },
                     icon: const Icon(Icons.location_on_rounded, size: 18),
                     label: const Text('Publish Point'),
                   ),

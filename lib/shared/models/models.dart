@@ -22,6 +22,7 @@ class UserModel {
   final UserType type;
   final bool isVerified;
   final String? bio;
+  final String role;
   final int donationCount;
   final int pointsHelped;
   final double totalDonation;
@@ -35,11 +36,14 @@ class UserModel {
     this.type = UserType.individu,
     this.isVerified = false,
     this.bio,
+    this.role = 'donatur',
     this.donationCount = 0,
     this.pointsHelped = 0,
     this.totalDonation = 0,
     this.communityPoints = 0,
   });
+
+  bool get isAdmin => role.toLowerCase() == 'admin';
 }
 
 class DonationRequest {
@@ -62,6 +66,9 @@ class DonationRequest {
   final List<String> tags;
   final String? goalText;
 
+  // Backend detail expectation (see Postman test for GET /api/donations/{id})
+  final double? avgRating;
+
   const DonationRequest({
     required this.id,
     required this.title,
@@ -81,6 +88,7 @@ class DonationRequest {
     this.collectedAmount = 2500000,
     this.tags = const [],
     this.goalText,
+    this.avgRating,
   });
 }
 

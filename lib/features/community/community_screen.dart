@@ -179,30 +179,30 @@ class _FeedCard extends StatelessWidget {
   Widget _feedTag(FeedPostType type) {
     final (label, bg, fg) = switch (type) {
       FeedPostType.bantuanDibutuhkan => (
-        'BANTUAN DIBUTUHKAN',
-        AppColors.statusOpenLight,
-        AppColors.statusOpen,
-      ),
+          'BANTUAN DIBUTUHKAN',
+          AppColors.statusOpenLight,
+          AppColors.statusOpen,
+        ),
       FeedPostType.pertanyaan => (
-        'PERTANYAAN',
-        const Color(0xFFE3F2FD),
-        const Color(0xFF1565C0),
-      ),
+          'PERTANYAAN',
+          const Color(0xFFE3F2FD),
+          const Color(0xFF1565C0),
+        ),
       FeedPostType.updateKomunitas => (
-        'UPDATE KOMUNITAS',
-        const Color(0xFFF3E5F5),
-        const Color(0xFF6A1B9A),
-      ),
+          'UPDATE KOMUNITAS',
+          const Color(0xFFF3E5F5),
+          const Color(0xFF6A1B9A),
+        ),
       FeedPostType.inspirasi => (
-        'INSPIRASI',
-        AppColors.statusProgressLight,
-        AppColors.statusProgress,
-      ),
+          'INSPIRASI',
+          AppColors.statusProgressLight,
+          AppColors.statusProgress,
+        ),
       FeedPostType.kisahSukses => (
-        'KISAH SUKSES',
-        AppColors.statusCompletedLight,
-        AppColors.statusCompleted,
-      ),
+          'KISAH SUKSES',
+          AppColors.statusCompletedLight,
+          AppColors.statusCompleted,
+        ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

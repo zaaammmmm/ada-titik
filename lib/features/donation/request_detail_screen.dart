@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 
@@ -9,267 +10,326 @@ class RequestDetailScreen extends StatelessWidget {
   final DonationRequest request;
   const RequestDetailScreen({super.key, required this.request});
 
+  Future<DonationRequest> _loadDetail() {
+    return DonationRepository().getById(request.id);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: CustomScrollView(
-        slivers: [
-          // Hero Image App Bar
-          SliverAppBar(
-            expandedHeight: 220,
-            pinned: true,
-            backgroundColor: Colors.white,
-            leading: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.arrow_back_rounded,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-            ),
-            actions: [
-              IconButton(
-                onPressed: () {},
-                icon: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.share_outlined,
-                    color: AppColors.textPrimary,
+    return FutureBuilder<DonationRequest>(
+      future: _loadDetail(),
+      initialData: request,
+      builder: (context, snapshot) {
+        final req = snapshot.data ?? request;
+
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: CustomScrollView(
+            slivers: [
+              // Hero Image App Bar
+              SliverAppBar(
+                expandedHeight: 220,
+                pinned: true,
+                backgroundColor: Colors.white,
+                leading: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back_rounded,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  request.imageUrl != null
-                      ? Image.network(
-                          request.imageUrl!,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _placeholder(),
-                        )
-                      : _placeholder(),
-                  // Urgency badge
-                  Positioned(
-                    top: 100,
-                    right: 16,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
+                actions: [
+                  IconButton(
+                    onPressed: () {},
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: AppColors.urgencyHigh,
-                        borderRadius: BorderRadius.circular(8),
+                        color: Colors.white,
+                        shape: BoxShape.circle,
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.warning_rounded,
-                            color: Colors.white,
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            request.urgency == UrgencyLevel.urgent
-                                ? 'High Urgency'
-                                : 'Normal',
-                            style: AppTextStyles.labelSmall.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
+                      child: const Icon(
+                        Icons.share_outlined,
+                        color: AppColors.textPrimary,
                       ),
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Title
-                  Text(request.title, style: AppTextStyles.headlineLarge),
-                  const SizedBox(height: 10),
-                  // Meta
-                  Row(
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Icon(
-                        Icons.access_time_rounded,
-                        size: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(request.timeAgo, style: AppTextStyles.bodySmall),
-                      const SizedBox(width: 16),
-                      Icon(
-                        Icons.person_outline_rounded,
-                        size: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(request.authorName, style: AppTextStyles.bodySmall),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Progress
-                  DonationProgressBar(
-                    collected: request.collectedAmount,
-                    goal: request.goalAmount,
-                    collectedLabel:
-                        '${request.collectedAmount.toInt()} Terkumpul',
-                    goalLabel:
-                        request.goalText ??
-                        'Goal: ${request.goalAmount.toInt()}',
-                  ),
-                  const SizedBox(height: 20),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  // Description
-                  Text('Description', style: AppTextStyles.headlineSmall),
-                  const SizedBox(height: 8),
-                  Text(
-                    request.description,
-                    style: AppTextStyles.bodyMedium.copyWith(height: 1.6),
-                  ),
-                  const SizedBox(height: 14),
-                  // Tags
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: request.tags
-                        .map((t) => TagChip(label: t))
-                        .toList(),
-                  ),
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  // Location
-                  Text('Location Detail', style: AppTextStyles.headlineSmall),
-                  const SizedBox(height: 12),
-                  // Map placeholder
-                  Container(
-                    height: 140,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: const Color(0xFFD7ECD4),
-                    ),
-                    child: Stack(
-                      children: [
-                        // Simulated map roads
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: CustomPaint(
-                            painter: _MapPainter(),
-                            child: Container(),
+                      req.imageUrl != null
+                          ? Image.network(
+                              req.imageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _placeholder(),
+                            )
+                          : _placeholder(),
+                      // Urgency badge
+                      Positioned(
+                        top: 100,
+                        right: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.urgencyHigh,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning_rounded,
+                                color: Colors.white,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                req.urgency == UrgencyLevel.urgent
+                                    ? 'High Urgency'
+                                    : 'Normal',
+                                style: AppTextStyles.labelSmall.copyWith(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        Center(
-                          child: Icon(
-                            Icons.location_on_rounded,
-                            color: AppColors.urgencyHigh,
-                            size: 36,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Title
+                      Text(req.title, style: AppTextStyles.headlineLarge),
+                      const SizedBox(height: 10),
+                      // Meta
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.access_time_rounded,
+                            size: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(req.timeAgo, style: AppTextStyles.bodySmall),
+                          const SizedBox(width: 16),
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 14,
+                            color: AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(req.authorName, style: AppTextStyles.bodySmall),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      // Progress
+                      DonationProgressBar(
+                        collected: req.collectedAmount,
+                        goal: req.goalAmount,
+                        collectedLabel:
+                            '${req.collectedAmount.toInt()} Terkumpul',
+                        goalLabel:
+                            req.goalText ?? 'Goal: ${req.goalAmount.toInt()}',
+                      ),
+                      if (req.avgRating != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Avg Rating: ${req.avgRating!.toStringAsFixed(1)}',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.location_on_rounded,
-                        color: AppColors.primary,
-                        size: 18,
+                      const SizedBox(height: 20),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      // Description
+                      Text('Description', style: AppTextStyles.headlineSmall),
+                      const SizedBox(height: 8),
+                      Text(
+                        req.description,
+                        style: AppTextStyles.bodyMedium.copyWith(height: 1.6),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      const SizedBox(height: 14),
+                      // Tags
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children:
+                            req.tags.map((t) => TagChip(label: t)).toList(),
+                      ),
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      // Location
+                      Text('Location Detail',
+                          style: AppTextStyles.headlineSmall),
+                      const SizedBox(height: 12),
+                      // Map placeholder
+                      Container(
+                        height: 140,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: const Color(0xFFD7ECD4),
+                        ),
+                        child: Stack(
                           children: [
-                            Text(
-                              request.location,
-                              style: AppTextStyles.titleSmall,
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: CustomPaint(
+                                painter: _MapPainter(),
+                                child: Container(),
+                              ),
                             ),
-                            Text(
-                              'Dekat Warung Bu Agus, Depok, Sleman, Yogyakarta.',
-                              style: AppTextStyles.bodySmall,
-                            ),
-                            Text(
-                              'Jarak : ${request.distanceKm} Km',
-                              style: AppTextStyles.bodySmall,
+                            Center(
+                              child: Icon(
+                                Icons.location_on_rounded,
+                                color: AppColors.urgencyHigh,
+                                size: 36,
+                              ),
                             ),
                           ],
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.location_on_rounded,
+                            color: AppColors.primary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  req.location,
+                                  style: AppTextStyles.titleSmall,
+                                ),
+                                Text(
+                                  'Dekat Warung Bu Agus, Depok, Sleman, Yogyakarta.',
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                                Text(
+                                  'Jarak : ${req.distanceKm} Km',
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      // Take Action
+                      Text('Take Action', style: AppTextStyles.headlineSmall),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Your help is crucial. Navigate to the location to provide assistance or materials.',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          // Status update sesuai backend:
+                          // Jika request sedang Open -> On Progress
+                          // Jika On Progress -> Completed
+                          final next = switch (req.status) {
+                            RequestStatus.open => RequestStatus.onProgress,
+                            RequestStatus.onProgress => RequestStatus.completed,
+                            RequestStatus.completed => RequestStatus.completed,
+                          };
+
+                          try {
+                            await DonationRepository().updateStatus(
+                              requestId: req.id,
+                              status: next,
+                            );
+
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Status diperbarui menjadi ${next.name}.',
+                                ),
+                              ),
+                            );
+
+                            // Trigger reload.
+                            Navigator.of(context).pop();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    RequestDetailScreen(request: req),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Gagal update status: $e'),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.navigation_rounded, size: 18),
+                        label: const Text('Navigate Here'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () {},
+                        icon: const Icon(
+                          Icons.handshake_outlined,
+                          size: 18,
+                          color: AppColors.primary,
+                        ),
+                        label: Text(
+                          'Offer Help Online',
+                          style: AppTextStyles.buttonLarge.copyWith(
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.border),
+                          foregroundColor: AppColors.primary,
+                          minimumSize: const Size(double.infinity, 52),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  // Take Action
-                  Text('Take Action', style: AppTextStyles.headlineSmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Your help is crucial. Navigate to the location to provide assistance or materials.',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Navigate button
-                  ElevatedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.navigation_rounded, size: 18),
-                    label: const Text('Navigate Here'),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(
-                      Icons.handshake_outlined,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                    label: Text(
-                      'Offer Help Online',
-                      style: AppTextStyles.buttonLarge.copyWith(
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.border),
-                      foregroundColor: AppColors.primary,
-                      minimumSize: const Size(double.infinity, 52),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

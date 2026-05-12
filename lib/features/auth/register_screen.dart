@@ -1,7 +1,10 @@
 // lib/features/auth/register_screen.dart
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/network/api_client.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/main_scaffold.dart';
 
@@ -13,14 +16,109 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+
   UserType _selectedType = UserType.individu;
   bool _agreedToTerms = false;
+  bool _isLoading = false;
 
-  void _register() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainScaffold()),
-      (_) => false,
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    super.dispose();
+  }
+
+  String _roleForBackend() {
+    // Postman schema.sql uses: role in ('donatur', 'komunitas', 'admin')
+    switch (_selectedType) {
+      case UserType.individu:
+        return 'donatur';
+      case UserType.organisasi:
+        return 'komunitas';
+    }
+  }
+
+  void _showError(String msg) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Register'),
+        content: Text(msg),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
+  }
+
+  Future<void> _register() async {
+    final name = _nameCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    final confirmPassword = _confirmPasswordCtrl.text;
+
+    if (name.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        confirmPassword.isEmpty) {
+      _showError('Semua field wajib diisi.');
+      return;
+    }
+
+    if (!_agreedToTerms) {
+      _showError('Silakan setujui syarat & ketentuan.');
+      return;
+    }
+
+    if (password.length < 8) {
+      _showError('Password minimal 8 karakter.');
+      return;
+    }
+
+    if (password != confirmPassword) {
+      _showError('Konfirmasi password tidak sesuai.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final res = await ApiClient.post<Map<String, dynamic>>(
+        '/api/auth/register',
+        data: {
+          'name': name,
+          'email': email,
+          'password': password,
+          'role': _roleForBackend(),
+        },
+      );
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        // Backend spec: Response 201: userId (no token expected)
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const MainScaffold()),
+          (_) => false,
+        );
+      } else {
+        _showError('Register gagal (${res.statusCode}).');
+      }
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      _showError('Register gagal${status != null ? ' ($status)' : ''}.');
+    } catch (_) {
+      _showError('Register gagal. Periksa koneksi/URL backend.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -78,6 +176,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   'Nama Lengkap',
                   Icons.person_outline_rounded,
                   'Trikarta',
+                  controller: _nameCtrl,
                 ),
                 const SizedBox(height: 14),
                 _formField(
@@ -85,6 +184,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Icons.email_outlined,
                   'a@example.com',
                   type: TextInputType.emailAddress,
+                  controller: _emailCtrl,
                 ),
                 const SizedBox(height: 14),
                 _formField(
@@ -92,6 +192,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Icons.lock_outline_rounded,
                   '••••••••',
                   obscure: true,
+                  controller: _passwordCtrl,
                 ),
                 const SizedBox(height: 14),
                 _formField(
@@ -99,6 +200,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Icons.lock_outline_rounded,
                   '••••••••',
                   obscure: true,
+                  controller: _confirmPasswordCtrl,
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -146,8 +248,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 20),
                 ElevatedButton(
-                  onPressed: _agreedToTerms ? _register : null,
-                  child: const Text('Daftar Sekarang'),
+                  onPressed: (_agreedToTerms && !_isLoading) ? _register : null,
+                  child:
+                      Text(_isLoading ? 'Mendaftarkan...' : 'Daftar Sekarang'),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -204,9 +307,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 CircleAvatar(
                   radius: 22,
-                  backgroundColor: isSelected
-                      ? AppColors.primary
-                      : AppColors.surfaceVariant,
+                  backgroundColor:
+                      isSelected ? AppColors.primary : AppColors.surfaceVariant,
                   child: Icon(
                     icon,
                     color: isSelected ? Colors.white : AppColors.textSecondary,
@@ -252,6 +354,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
     String hint, {
     TextInputType type = TextInputType.text,
     bool obscure = false,
+    TextEditingController? controller,
+    ValueChanged<String>? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,8 +363,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         Text(label, style: AppTextStyles.titleSmall),
         const SizedBox(height: 6),
         TextFormField(
+          controller: controller,
           keyboardType: type,
           obscureText: obscure,
+          onChanged: onChanged,
           decoration: InputDecoration(
             hintText: hint,
             prefixIcon: Icon(icon, color: AppColors.textLight, size: 18),

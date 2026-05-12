@@ -1,8 +1,9 @@
 // lib/features/search/search_screen.dart
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import '../donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import '../donation/request_detail_screen.dart';
 
@@ -15,6 +16,7 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _searchController = TextEditingController();
+
   String _query = '';
   String _selectedCategory = 'Semua';
   String _selectedUrgency = 'Semua';
@@ -39,38 +41,47 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  List<DonationRequest> get _filteredResults {
-    return MockData.activeRequests.where((req) {
-      final matchesQuery =
-          _query.isEmpty ||
+  Future<List<DonationRequest>> _loadResults() async {
+    final repo = DonationRepository();
+
+    // Backend may not support full filters yet; fetch open requests and filter locally.
+    final base = await repo.getAll(
+      status: RequestStatus.open,
+      page: 1,
+      limit: 50,
+    );
+
+    return base.where((req) {
+      final matchesQuery = _query.isEmpty ||
           req.title.toLowerCase().contains(_query.toLowerCase()) ||
           req.location.toLowerCase().contains(_query.toLowerCase()) ||
           req.category.toLowerCase().contains(_query.toLowerCase());
 
-      final matchesCategory =
-          _selectedCategory == 'Semua' ||
-          req.category.toLowerCase().contains(
-            _selectedCategory.toLowerCase(),
-          );
+      final matchesCategory = _selectedCategory == 'Semua' ||
+          req.category.toLowerCase().contains(_selectedCategory.toLowerCase());
 
-      return matchesQuery && matchesCategory;
+      // Urgency mapping is UI-only for now.
+      final matchesUrgency = () {
+        if (_selectedUrgency == 'Semua') return true;
+        if (_selectedUrgency == 'Mendesak')
+          return req.urgency == UrgencyLevel.urgent;
+        if (_selectedUrgency == 'Normal')
+          return req.urgency == UrgencyLevel.normal;
+        if (_selectedUrgency == 'Rendah')
+          return req.urgency == UrgencyLevel.low;
+        return true;
+      }();
+
+      // Status mapping: since we fetch only OPEN for now.
+      final matchesStatus = () {
+        if (_selectedStatus == 'Semua') return true;
+        // TODO: implement backend status filtering once endpoints/models are ready.
+        // For now keep only open.
+        return true;
+      }();
+
+      return matchesQuery && matchesCategory && matchesUrgency && matchesStatus;
     }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(context),
-      body: Column(
-        children: [
-          _buildFilters(),
-          Expanded(
-            child: _buildResults(),
-          ),
-        ],
-      ),
-    );
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
@@ -162,12 +173,10 @@ class _SearchScreenState extends State<SearchScreen> {
                     child: Text(
                       cat,
                       style: AppTextStyles.labelMedium.copyWith(
-                        color: isSelected
-                            ? Colors.white
-                            : AppColors.textSecondary,
-                        fontWeight: isSelected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
+                        color:
+                            isSelected ? Colors.white : AppColors.textSecondary,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
                   ),
@@ -193,11 +202,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                _buildDropdownChip('Urgensi', _urgencies, _selectedUrgency,
-                    (v) => setState(() => _selectedUrgency = v!)),
+                _buildDropdownChip(
+                  'Urgensi',
+                  _urgencies,
+                  _selectedUrgency,
+                  (v) => setState(() => _selectedUrgency = v!),
+                ),
                 const SizedBox(width: 8),
-                _buildDropdownChip('Status', _statuses, _selectedStatus,
-                    (v) => setState(() => _selectedStatus = v!)),
+                _buildDropdownChip(
+                  'Status',
+                  _statuses,
+                  _selectedStatus,
+                  (v) => setState(() => _selectedStatus = v!),
+                ),
               ],
             ),
           ),
@@ -247,40 +264,59 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResults() {
-    final results = _filteredResults;
-
-    if (results.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 64,
-              color: AppColors.textLight,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Tidak ada hasil ditemukan',
-              style: AppTextStyles.titleMedium.copyWith(
+    return FutureBuilder<List<DonationRequest>>(
+      future: _loadResults(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Failed to load results',
+              style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Coba kata kunci atau filter yang berbeda',
-              style: AppTextStyles.bodySmall,
-            ),
-          ],
-        ),
-      );
-    }
+          );
+        }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: results.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, i) => _buildResultCard(context, results[i]),
+        final results = snapshot.data ?? [];
+
+        if (results.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.search_off_rounded,
+                  size: 64,
+                  color: AppColors.textLight,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Tidak ada hasil ditemukan',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Coba kata kunci atau filter yang berbeda',
+                  style: AppTextStyles.bodySmall,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: results.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, i) => _buildResultCard(context, results[i]),
+        );
+      },
     );
   }
 
@@ -410,6 +446,22 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: _buildAppBar(context),
+      body: Column(
+        children: [
+          _buildFilters(),
+          Expanded(
+            child: _buildResults(),
+          ),
+        ],
       ),
     );
   }

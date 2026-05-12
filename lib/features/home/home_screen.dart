@@ -2,11 +2,11 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../donation/active_requests_screen.dart';
 import '../donation/request_detail_screen.dart';
+import '../donation/data/donation_repository.dart';
 import '../notification/notification_screen.dart';
 import '../search/search_screen.dart';
 
@@ -15,63 +15,102 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AdaTitikAppBar(
-        onNotification: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const NotificationScreen()),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 12),
-            AppSearchBar(
-              hint: 'Search for aid requests, categories...',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SearchScreen()),
+    final repo = DonationRepository();
+
+    return FutureBuilder<UserModel>(
+      future: repo.getProfile(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.background,
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return const Scaffold(
+            backgroundColor: AppColors.background,
+            body: Center(
+              child: Text('Failed to load profile'),
+            ),
+          );
+        }
+
+        final user = snapshot.data!;
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AdaTitikAppBar(
+            onNotification: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NotificationScreen(),
               ),
             ),
-            const SizedBox(height: 20),
-            _buildGreeting(),
-            const SizedBox(height: 16),
-            _buildStatsRow(),
-            const SizedBox(height: 12),
-            _buildActiveRequestBanner(context),
-            const SizedBox(height: 24),
-            SectionHeader(
-              title: 'Kebutuhan\nMenudesak',
-              actionLabel: 'View All',
-              onAction: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ActiveRequestsScreen()),
-              ),
+          ),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 12),
+                AppSearchBar(
+                  hint: 'Search for aid requests, categories...',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SearchScreen(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _buildGreeting(user),
+                const SizedBox(height: 16),
+                _buildStatsRow(),
+                const SizedBox(height: 12),
+                _buildActiveRequestBanner(context),
+                const SizedBox(height: 24),
+                SectionHeader(
+                  title: 'Kebutuhan Mendesak',
+                  actionLabel: 'View All',
+                  onAction: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const ActiveRequestsScreen(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _buildUrgentCarousel(context),
+                const SizedBox(height: 24),
+                Text(
+                  'Aktivitas Terbaru',
+                  style: AppTextStyles.headlineMedium,
+                ),
+                const SizedBox(height: 12),
+                _buildActivityList(),
+                const SizedBox(height: 24),
+              ],
             ),
-            const SizedBox(height: 14),
-            _buildUrgentCarousel(context),
-            const SizedBox(height: 24),
-            Text('Aktivitas Terbaru', style: AppTextStyles.headlineMedium),
-            const SizedBox(height: 12),
-            _buildActivityList(),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildGreeting() {
+  Widget _buildGreeting(UserModel user) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Hello, Budi!', style: AppTextStyles.displayMedium),
+        Text(
+          'Hello, ${user.name}!',
+          style: AppTextStyles.displayMedium,
+        ),
         const SizedBox(height: 4),
         Text(
-          'Your kindness creates ripples. Ready to\nmake an impact today?',
+          'Your kindness creates ripples. Ready to make an impact today?',
           style: AppTextStyles.bodyMedium.copyWith(
             color: AppColors.textSecondary,
           ),
@@ -153,28 +192,61 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildUrgentCarousel(BuildContext context) {
-    final all = [
-      ...MockData.activeRequests.where((r) => r.urgency == UrgencyLevel.urgent),
-      ...MockData.activeRequests.where(
-        (r) => r.urgency != UrgencyLevel.urgent,
-      ),
-    ];
     return SizedBox(
       height: 240,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: all.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (context, index) {
-          final req = all[index];
-          return _UrgentCard(
-            request: req,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => RequestDetailScreen(request: req),
+      child: FutureBuilder<List<DonationRequest>>(
+        future: DonationRepository().getAll(
+          status: RequestStatus.open,
+          page: 1,
+          limit: 20,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Failed to load requests',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
-            ),
+            );
+          }
+
+          final all = snapshot.data ?? [];
+          final urgent = all.where((r) => r.urgency == UrgencyLevel.urgent);
+          final normal = all.where((r) => r.urgency != UrgencyLevel.urgent);
+          final ordered = [...urgent, ...normal].toList();
+
+          if (ordered.isEmpty) {
+            return Center(
+              child: Text(
+                'No active requests',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: ordered.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final req = ordered[index];
+              return _UrgentCard(
+                request: req,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RequestDetailScreen(request: req),
+                  ),
+                ),
+              );
+            },
           );
         },
       ),
@@ -182,23 +254,27 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildActivityList() {
+    // Step 3: belum ada endpoint activity di Postman yang jelas untuk UI ini,
+    // jadi sementara tampilkan placeholder agar tidak pakai MockData.
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.divider),
       ),
+      padding: const EdgeInsets.all(16),
       child: Column(
-        children: MockData.recentActivity.asMap().entries.map((entry) {
-          final i = entry.key;
-          final act = entry.value;
-          return Column(
-            children: [
-              if (i > 0) const Divider(height: 1),
-              _ActivityTile(activity: act),
-            ],
-          );
-        }).toList(),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Aktivitas Terbaru', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 8),
+          Text(
+            'Coming soon: aktivitas dari backend.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -388,20 +464,20 @@ class _ActivityTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final (icon, bg, fg) = switch (activity.iconType) {
       'success' => (
-        Icons.check_circle_rounded,
-        AppColors.statusCompletedLight,
-        AppColors.statusCompleted,
-      ),
+          Icons.check_circle_rounded,
+          AppColors.statusCompletedLight,
+          AppColors.statusCompleted,
+        ),
       'donation' => (
-        Icons.favorite_rounded,
-        AppColors.urgencyHighLight,
-        AppColors.urgencyHigh,
-      ),
+          Icons.favorite_rounded,
+          AppColors.urgencyHighLight,
+          AppColors.urgencyHigh,
+        ),
       _ => (
-        Icons.campaign_rounded,
-        AppColors.urgencyMediumLight,
-        AppColors.urgencyMedium,
-      ),
+          Icons.campaign_rounded,
+          AppColors.urgencyMediumLight,
+          AppColors.urgencyMedium,
+        ),
     };
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
