@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 
@@ -16,12 +16,15 @@ class CommunityScreen extends StatefulWidget {
 class _CommunityScreenState extends State<CommunityScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late final Future<List<FeedPost>> _feedFuture;
+  final DonationRepository _repo = DonationRepository();
   final List<String> _tabs = ['Terbaru', 'Populer', 'Diskusi'];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    _feedFuture = _repo.getNearbyNotifications();
   }
 
   @override
@@ -84,12 +87,51 @@ class _CommunityScreenState extends State<CommunityScreen>
   }
 
   Widget _buildFeed() {
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: MockData.communityFeed.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 0),
-      itemBuilder: (context, index) =>
-          _FeedCard(post: MockData.communityFeed[index]),
+    return FutureBuilder<List<FeedPost>>(
+      future: _feedFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Gagal memuat komunitas. Silakan coba lagi.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          );
+        }
+
+        final feed = snapshot.data ?? [];
+        if (feed.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Belum ada pembaruan komunitas saat ini.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: feed.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 0),
+          itemBuilder: (context, index) => _FeedCard(post: feed[index]),
+        );
+      },
     );
   }
 }

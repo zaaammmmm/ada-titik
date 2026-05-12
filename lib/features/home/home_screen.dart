@@ -254,29 +254,141 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildActivityList() {
-    // Step 3: belum ada endpoint activity di Postman yang jelas untuk UI ini,
-    // jadi sementara tampilkan placeholder agar tidak pakai MockData.
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Aktivitas Terbaru', style: AppTextStyles.headlineMedium),
-          const SizedBox(height: 8),
-          Text(
-            'Coming soon: aktivitas dari backend.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
+    final repo = DonationRepository();
+
+    return FutureBuilder<List<ActivityItem>>(
+      future: repo.getUserActivity(limit: 4),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
             ),
+            padding: const EdgeInsets.all(16),
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Gagal memuat aktivitas. Silakan coba lagi.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+
+        final activities = snapshot.data ?? [];
+        if (activities.isEmpty) {
+          return Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Belum ada aktivitas terbaru. Silakan ulangi lagi nanti.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.divider),
           ),
-        ],
-      ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Aktivitas Terbaru', style: AppTextStyles.headlineMedium),
+              const SizedBox(height: 8),
+              ...List.generate(activities.length, (i) {
+                final activity = activities[i];
+                return Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: _activityIconBackground(activity.iconType),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            _activityIconData(activity.iconType),
+                            color: _activityIconColor(activity.iconType),
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(activity.title,
+                                  style: AppTextStyles.bodyMedium),
+                              const SizedBox(height: 2),
+                              Text(
+                                activity.timeAgo,
+                                style: AppTextStyles.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (i < activities.length - 1)
+                      const Divider(height: 20, color: Colors.transparent),
+                  ],
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  IconData _activityIconData(String type) {
+    return switch (type) {
+      'success' => Icons.check_circle_rounded,
+      'donation' => Icons.favorite_rounded,
+      _ => Icons.campaign_rounded,
+    };
+  }
+
+  Color _activityIconBackground(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompletedLight,
+      'donation' => AppColors.urgencyHighLight,
+      _ => AppColors.urgencyMediumLight,
+    };
+  }
+
+  Color _activityIconColor(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompleted,
+      'donation' => AppColors.urgencyHigh,
+      _ => AppColors.urgencyMedium,
+    };
   }
 }
 
@@ -453,60 +565,5 @@ class _UrgentCard extends StatelessWidget {
     if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
     if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}K';
     return v.toStringAsFixed(0);
-  }
-}
-
-class _ActivityTile extends StatelessWidget {
-  final ActivityItem activity;
-  const _ActivityTile({required this.activity});
-
-  @override
-  Widget build(BuildContext context) {
-    final (icon, bg, fg) = switch (activity.iconType) {
-      'success' => (
-          Icons.check_circle_rounded,
-          AppColors.statusCompletedLight,
-          AppColors.statusCompleted,
-        ),
-      'donation' => (
-          Icons.favorite_rounded,
-          AppColors.urgencyHighLight,
-          AppColors.urgencyHigh,
-        ),
-      _ => (
-          Icons.campaign_rounded,
-          AppColors.urgencyMediumLight,
-          AppColors.urgencyMedium,
-        ),
-    };
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-            child: Icon(icon, color: fg, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity.title,
-                  style: AppTextStyles.bodyMedium,
-                  maxLines: 3,
-                ),
-                const SizedBox(height: 2),
-                Text(activity.timeAgo, style: AppTextStyles.bodySmall),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

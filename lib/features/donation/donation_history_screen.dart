@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 
 class DonationHistoryScreen extends StatefulWidget {
@@ -14,12 +14,15 @@ class DonationHistoryScreen extends StatefulWidget {
 
 class _DonationHistoryScreenState extends State<DonationHistoryScreen>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  late final TabController _tabController;
+  late final Future<List<ActivityItem>> _activityFuture;
+  final DonationRepository _repo = DonationRepository();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _activityFuture = _repo.getUserActivity(limit: 10);
   }
 
   @override
@@ -80,33 +83,42 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
   }
 
   Widget _buildDonationsTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _buildDonationCard(
-          title: 'Donasi – Sembako RW 07',
-          amount: 'Rp 150.000',
-          date: 'Oct 20, 2023',
-          status: RequestStatus.completed,
-          category: 'Pangan',
-        ),
-        const SizedBox(height: 12),
-        _buildDonationCard(
-          title: 'Donasi – Obat Puskesmas Maguwo',
-          amount: 'Rp 350.000',
-          date: 'Oct 10, 2023',
-          status: RequestStatus.completed,
-          category: 'Medis',
-        ),
-        const SizedBox(height: 12),
-        _buildDonationCard(
-          title: 'Bantuan Tunai Pendidikan SD Mawar',
-          amount: 'Rp 500.000',
-          date: 'Oct 12, 2023',
-          status: RequestStatus.completed,
-          category: 'Pendidikan',
-        ),
-      ],
+    return FutureBuilder<List<ActivityItem>>(
+      future: _activityFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Gagal memuat riwayat donasi.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+
+        final activities = snapshot.data ?? [];
+        if (activities.isEmpty) {
+          return Center(
+            child: Text(
+              'Belum ada riwayat donasi.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: activities.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, i) => _buildActivityCard(activities[i]),
+        );
+      },
     );
   }
 
@@ -171,18 +183,46 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
   }
 
   Widget _buildKelolaBantuanTab() {
-    final histories = MockData.donationHistory;
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: histories.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 16),
-      itemBuilder: (context, i) => _buildHistoryCard(histories[i]),
+    return FutureBuilder<List<ActivityItem>>(
+      future: _activityFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Gagal memuat riwayat bantuan.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+
+        final activities = snapshot.data ?? [];
+        if (activities.isEmpty) {
+          return Center(
+            child: Text(
+              'Belum ada riwayat bantuan.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: activities.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 16),
+          itemBuilder: (context, i) => _buildActivityCard(activities[i]),
+        );
+      },
     );
   }
 
-  Widget _buildHistoryCard(DonationHistory history) {
-    final isProgress = history.status == RequestStatus.onProgress;
-
+  Widget _buildActivityCard(ActivityItem activity) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -195,119 +235,35 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        history.title,
-                        style: AppTextStyles.headlineSmall.copyWith(
-                          fontSize: 20,
-                          height: 1.25,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Request ID: ${history.requestId}',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _StatusBadge(status: history.status),
-              ],
-            ),
-          ),
-
-          const Divider(height: 1, color: AppColors.divider),
-
-          // Status Updates / Final Report
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Text(
-              isProgress ? 'Status Updates' : 'Final Report',
-              style: AppTextStyles.titleSmall.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Timeline
-          ...history.updates.map((update) => _buildTimelineItem(update)),
-
-          const SizedBox(height: 14),
-
-          // Documentation
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              isProgress ? 'Documentation' : 'Official Documentation',
-              style: AppTextStyles.titleSmall.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildDocumentation(history),
-          const SizedBox(height: 16),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTimelineItem(StatusUpdate update) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      padding: const EdgeInsets.all(16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            children: [
-              Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  color: update.isActive ? AppColors.primary : AppColors.border,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              if (!update.isActive)
-                Container(
-                  width: 2,
-                  height: 40,
-                  color: AppColors.divider,
-                  margin: const EdgeInsets.only(top: 4),
-                ),
-            ],
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _activityIconBackground(activity.iconType),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              _activityIconData(activity.iconType),
+              color: _activityIconColor(activity.iconType),
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  update.dateStr,
-                  style: AppTextStyles.labelMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(update.description, style: AppTextStyles.bodySmall),
+                Text(activity.title, style: AppTextStyles.titleSmall),
+                if (activity.subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(activity.subtitle, style: AppTextStyles.bodySmall),
+                ],
+                const SizedBox(height: 8),
+                Text(activity.timeAgo, style: AppTextStyles.bodySmall),
               ],
             ),
           ),
@@ -316,88 +272,28 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
     );
   }
 
-  Widget _buildDocumentation(DonationHistory history) {
-    final isProgress = history.status == RequestStatus.onProgress;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          if (isProgress) ...[
-            // Image docs
-            ...history.docImages.take(2).map(
-              (url) => Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    url,
-                    width: 90,
-                    height: 70,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 90,
-                      height: 70,
-                      color: AppColors.surfaceVariant,
-                      child: const Icon(
-                        Icons.image_outlined,
-                        color: AppColors.textLight,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ] else ...[
-            // PDF doc
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.divider),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.picture_as_pdf_outlined,
-                    color: AppColors.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'LPJ_Final.pdf',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            // Image doc
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                history.docImages.first,
-                width: 80,
-                height: 64,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 80,
-                  height: 64,
-                  color: AppColors.surfaceVariant,
-                  child: const Icon(
-                    Icons.image_outlined,
-                    color: AppColors.textLight,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
+  IconData _activityIconData(String type) {
+    return switch (type) {
+      'success' => Icons.check_circle_rounded,
+      'donation' => Icons.favorite_rounded,
+      _ => Icons.campaign_rounded,
+    };
+  }
+
+  Color _activityIconBackground(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompletedLight,
+      'donation' => AppColors.urgencyHighLight,
+      _ => AppColors.urgencyMediumLight,
+    };
+  }
+
+  Color _activityIconColor(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompleted,
+      'donation' => AppColors.urgencyHigh,
+      _ => AppColors.urgencyMedium,
+    };
   }
 }
 

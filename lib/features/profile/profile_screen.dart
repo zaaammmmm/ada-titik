@@ -337,123 +337,147 @@ class _ProfileContent extends StatelessWidget {
   }
 
   Widget _buildRecentActivity() {
-    // Belum ada endpoint recent activity di Step 5 ini.
-    // Tetap mempertahankan UI sementara.
-    final items = [
-      _ActivityEntry(
-        icon: Icons.inventory_2_outlined,
-        iconBg: const Color(0xFFFFF8E1),
-        iconColor: AppColors.urgencyMedium,
-        title: 'Paket Sembako Keluarga Harapan',
-        subtitle: 'Donasi Barang · Menunggu Penjemputan',
-        status: 'On Progress',
-        statusColor: AppColors.statusProgress,
-        statusBg: AppColors.statusProgressLight,
-        date: 'Today, 09:45 AM',
-      ),
-      _ActivityEntry(
-        icon: Icons.check_circle_outline_rounded,
-        iconBg: AppColors.urgencyLowLight,
-        iconColor: AppColors.urgencyLow,
-        title: 'Bantuan Tunai Pendidikan SD Mawar',
-        subtitle: 'Donasi Dana · Rp 500.000',
-        status: 'Completed',
-        statusColor: AppColors.statusCompleted,
-        statusBg: AppColors.statusCompletedLight,
-        date: 'Oct 12, 2023',
-      ),
-      _ActivityEntry(
-        icon: Icons.volunteer_activism_outlined,
-        iconBg: AppColors.primaryContainer,
-        iconColor: AppColors.primary,
-        title: 'Relawan Dapur Umum Banjir Bandang',
-        subtitle: 'Partisipasi Tenaga · 8 Jam',
-        status: 'Completed',
-        statusColor: AppColors.statusCompleted,
-        statusBg: AppColors.statusCompletedLight,
-        date: 'Sep 28, 2023',
-      ),
-    ];
+    final repo = DonationRepository();
+    return FutureBuilder<List<ActivityItem>>(
+      future: repo.getUserActivity(limit: 5),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Gagal memuat aktivitas. Mohon coba lagi.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
-          ],
-        ),
-        child: Column(
-          children: List.generate(items.length, (i) {
-            final item = items[i];
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: item.iconBg,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(item.icon, color: item.iconColor, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.title, style: AppTextStyles.titleSmall),
-                            const SizedBox(height: 2),
-                            Text(item.subtitle, style: AppTextStyles.bodySmall),
-                            const SizedBox(height: 6),
-                            Row(
+          );
+        }
+
+        final activities = snapshot.data ?? [];
+        if (activities.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Belum ada aktivitas terbaru. Silakan ulangi lagi nanti.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: List.generate(activities.length, (i) {
+                final item = activities[i];
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: _activityIconBackground(item.iconType),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              _activityIconData(item.iconType),
+                              color: _activityIconColor(item.iconType),
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: item.statusBg,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    item.status,
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color: item.statusColor,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(item.date, style: AppTextStyles.bodySmall),
+                                Text(item.title,
+                                    style: AppTextStyles.titleSmall),
+                                const SizedBox(height: 2),
+                                if (item.subtitle.isNotEmpty)
+                                  Text(item.subtitle,
+                                      style: AppTextStyles.bodySmall),
+                                const SizedBox(height: 6),
+                                Text(item.timeAgo,
+                                    style: AppTextStyles.bodySmall),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                if (i < items.length - 1)
-                  const Divider(height: 1, color: AppColors.divider),
-              ],
-            );
-          }),
-        ),
-      ),
+                    ),
+                    if (i < activities.length - 1)
+                      const Divider(height: 1, color: AppColors.divider),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
     );
+  }
+
+  IconData _activityIconData(String type) {
+    return switch (type) {
+      'success' => Icons.check_circle_outline_rounded,
+      'donation' => Icons.favorite_outline_rounded,
+      _ => Icons.campaign_rounded,
+    };
+  }
+
+  Color _activityIconBackground(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompletedLight,
+      'donation' => AppColors.urgencyHighLight,
+      _ => AppColors.urgencyMediumLight,
+    };
+  }
+
+  Color _activityIconColor(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompleted,
+      'donation' => AppColors.urgencyHigh,
+      _ => AppColors.urgencyMedium,
+    };
   }
 }
 
@@ -581,28 +605,4 @@ class _ImpactCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ActivityEntry {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String status;
-  final Color statusColor;
-  final Color statusBg;
-  final String date;
-
-  const _ActivityEntry({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    required this.statusColor,
-    required this.statusBg,
-    required this.date,
-  });
 }

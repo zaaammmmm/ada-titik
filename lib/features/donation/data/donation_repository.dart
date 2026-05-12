@@ -98,6 +98,70 @@ class DonationRepository {
     );
   }
 
+  Future<List<ActivityItem>> getUserActivity({
+    int page = 1,
+    int limit = 10,
+  }) async {
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/users/activity',
+      query: {'page': page, 'limit': limit},
+    );
+
+    final body = res.data;
+    final data = (body?['data'] as List?) ?? [];
+
+    return data.whereType<Map<String, dynamic>>().map(_mapActivity).toList();
+  }
+
+  ActivityItem _mapActivity(Map<String, dynamic> item) {
+    final title = item['title']?.toString() ??
+        item['activity']?.toString() ??
+        item['description']?.toString() ??
+        item['message']?.toString() ??
+        item['name']?.toString() ??
+        'Aktivitas terbaru';
+
+    final subtitle = item['subtitle']?.toString() ??
+        item['detail']?.toString() ??
+        item['meta']?.toString() ??
+        '';
+
+    final timeAgo = item['created_at']?.toString() ??
+        item['createdAt']?.toString() ??
+        item['date']?.toString() ??
+        item['time_ago']?.toString() ??
+        item['timeAgo']?.toString() ??
+        'Baru';
+
+    final type = item['type']?.toString() ??
+        item['activity_type']?.toString() ??
+        item['event']?.toString();
+    final status = item['status']?.toString() ?? '';
+
+    return ActivityItem(
+      id: item['id']?.toString() ?? item['activity_id']?.toString() ?? title,
+      title: title,
+      subtitle: subtitle,
+      timeAgo: timeAgo,
+      iconType: _activityIconType(type, status, title, subtitle),
+    );
+  }
+
+  String _activityIconType(
+      String? type, String status, String title, String subtitle) {
+    final lowerType = type?.toLowerCase() ?? '';
+    final lowerStatus = status.toLowerCase();
+    final lowerText = '${title.toLowerCase()} ${subtitle.toLowerCase()}';
+
+    if (lowerStatus.contains('complete') || lowerStatus.contains('selesai')) {
+      return 'success';
+    }
+    if (lowerType.contains('rating') || lowerText.contains('donasi')) {
+      return 'donation';
+    }
+    return 'request';
+  }
+
   UrgencyLevel _urgencyFromBackend(String? v) {
     final s = (v ?? '').trim();
     switch (s) {
@@ -152,18 +216,16 @@ class DonationRepository {
 
     // Location: backend uses PostGIS geometry (Point, 4326).
     // JSON may come as longitude/latitude keys.
-    double _toDouble(dynamic v, double fallback) {
+    double toDouble(dynamic v, double fallback) {
       if (v is num) return v.toDouble();
       return fallback;
     }
 
-    // Note: helper above is used below.
+    final longitude = toDouble(item['longitude'],
+        toDouble(item['lng'], toDouble(item['lon'], 110.3695)));
 
-    final longitude = _toDouble(item['longitude'],
-        _toDouble(item['lng'], _toDouble(item['lon'], 110.3695)));
-
-    final latitude = _toDouble(item['latitude'],
-        _toDouble(item['lat'], _toDouble(item['geo_lat'], -7.7956)));
+    final latitude = toDouble(item['latitude'],
+        toDouble(item['lat'], toDouble(item['geo_lat'], -7.7956)));
 
     final location = item['location']?.toString() ?? 'Lokasi belum tersedia';
 
@@ -245,6 +307,7 @@ class DonationRepository {
   Future<List<DonationRequest>> getAll({
     UrgencyLevel? urgency,
     RequestStatus? status,
+    String? category,
     String? search,
     int page = 1,
     int limit = 10,
@@ -252,6 +315,8 @@ class DonationRepository {
     final query = <String, dynamic>{
       if (urgency != null) 'urgency': _urgencyToBackend(urgency),
       if (status != null) 'status': _statusToBackend(status),
+      if (category != null && category.trim().isNotEmpty)
+        'category': category.trim(),
       if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
       'page': page,
       'limit': limit,
@@ -309,6 +374,66 @@ class DonationRepository {
     final body = res.data;
     final data = (body?['data'] as List?) ?? [];
     return data.whereType<Map<String, dynamic>>().map(_mapDonation).toList();
+  }
+
+  Future<List<FeedPost>> getNearbyNotifications({
+    double lat = -7.7956,
+    double lng = 110.3695,
+    int radiusMeters = 5000,
+    int limit = 5,
+  }) async {
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/notifications/nearby',
+      query: {
+        'lat': lat,
+        'lng': lng,
+        'radius': radiusMeters,
+        'limit': limit,
+      },
+    );
+
+    final body = res.data;
+    final data = (body?['data'] as List?) ?? [];
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(_mapNotification)
+        .toList();
+  }
+
+  FeedPost _mapNotification(Map<String, dynamic> item) {
+    final id = item['id']?.toString() ?? '';
+    final title = item['title']?.toString() ?? item['name']?.toString() ?? '';
+    final description =
+        item['description']?.toString() ?? item['content']?.toString() ?? '';
+    final authorName = item['created_by_name']?.toString() ??
+        item['author_name']?.toString() ??
+        item['user_name']?.toString() ??
+        'Komunitas';
+    final authorRole =
+        item['role']?.toString() ?? item['type']?.toString() ?? 'Komunitas';
+    final timeAgo = item['time_ago']?.toString() ??
+        item['created_at']?.toString() ??
+        item['createdAt']?.toString() ??
+        'Baru';
+    final imageUrl =
+        item['image_url']?.toString() ?? item['photo_url']?.toString();
+    final rawUrgency = item['urgency']?.toString().toLowerCase() ?? '';
+    final type = rawUrgency.contains('mendesak')
+        ? FeedPostType.bantuanDibutuhkan
+        : FeedPostType.updateKomunitas;
+
+    return FeedPost(
+      id: id,
+      authorName: authorName,
+      authorRole: authorRole,
+      content: title.isNotEmpty ? '$title\n\n$description' : description,
+      timeAgo: timeAgo,
+      type: type,
+      imageUrl: imageUrl,
+      likes: 0,
+      comments: 0,
+      tagLabel: 'BANTUAN DIBUTUHKAN',
+    );
   }
 
   Future<DonationRequest> createDonation({

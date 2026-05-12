@@ -44,44 +44,42 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<List<DonationRequest>> _loadResults() async {
     final repo = DonationRepository();
 
-    // Backend may not support full filters yet; fetch open requests and filter locally.
-    final base = await repo.getAll(
-      status: RequestStatus.open,
+    final query = <String, dynamic>{
+      if (_query.trim().isNotEmpty) 'search': _query.trim(),
+      if (_selectedUrgency != 'Semua') 'urgency': _selectedUrgency,
+      if (_selectedStatus != 'Semua') 'status': _selectedStatus,
+      if (_selectedCategory != 'Semua') 'category': _selectedCategory,
+      'page': 1,
+      'limit': 50,
+    };
+
+    final results = await repo.getAll(
+      urgency: _selectedUrgency != 'Semua'
+          ? _selectedUrgency == 'Mendesak'
+              ? UrgencyLevel.urgent
+              : _selectedUrgency == 'Normal'
+                  ? UrgencyLevel.normal
+                  : UrgencyLevel.low
+          : null,
+      status: _selectedStatus != 'Semua'
+          ? _selectedStatus == 'Open'
+              ? RequestStatus.open
+              : _selectedStatus == 'On Progress'
+                  ? RequestStatus.onProgress
+                  : RequestStatus.completed
+          : null,
+      category: _selectedCategory != 'Semua' ? _selectedCategory : null,
+      search: _query.trim().isEmpty ? null : _query.trim(),
       page: 1,
       limit: 50,
     );
 
-    return base.where((req) {
-      final matchesQuery = _query.isEmpty ||
-          req.title.toLowerCase().contains(_query.toLowerCase()) ||
-          req.location.toLowerCase().contains(_query.toLowerCase()) ||
-          req.category.toLowerCase().contains(_query.toLowerCase());
-
-      final matchesCategory = _selectedCategory == 'Semua' ||
-          req.category.toLowerCase().contains(_selectedCategory.toLowerCase());
-
-      // Urgency mapping is UI-only for now.
-      final matchesUrgency = () {
-        if (_selectedUrgency == 'Semua') return true;
-        if (_selectedUrgency == 'Mendesak')
-          return req.urgency == UrgencyLevel.urgent;
-        if (_selectedUrgency == 'Normal')
-          return req.urgency == UrgencyLevel.normal;
-        if (_selectedUrgency == 'Rendah')
-          return req.urgency == UrgencyLevel.low;
-        return true;
-      }();
-
-      // Status mapping: since we fetch only OPEN for now.
-      final matchesStatus = () {
-        if (_selectedStatus == 'Semua') return true;
-        // TODO: implement backend status filtering once endpoints/models are ready.
-        // For now keep only open.
-        return true;
-      }();
-
-      return matchesQuery && matchesCategory && matchesUrgency && matchesStatus;
+    final filtered = results.where((req) {
+      if (_selectedCategory == 'Semua') return true;
+      return req.category.toLowerCase() == _selectedCategory.toLowerCase();
     }).toList();
+
+    return filtered;
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {

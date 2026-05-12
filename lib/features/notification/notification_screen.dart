@@ -2,9 +2,26 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../donation/data/donation_repository.dart';
 
 class NotificationScreen extends StatelessWidget {
   const NotificationScreen({super.key});
+
+  Future<List<NotificationItem>> _loadNotifications() async {
+    final repo = DonationRepository();
+    return repo.getNearbyNotifications(limit: 10).then(
+          (items) => items
+              .map((post) => NotificationItem(
+                    id: post.id,
+                    title: post.authorName,
+                    subtitle: post.content,
+                    time: post.timeAgo,
+                    unread: true,
+                    iconType: post.type.name,
+                  ))
+              .toList(),
+        );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,97 +51,96 @@ class NotificationScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: [
-          _buildSectionLabel('Hari Ini'),
-          _buildNotifItem(
-            icon: Icons.location_on_rounded,
-            iconBg: AppColors.urgencyHighLight,
-            iconColor: AppColors.urgencyHigh,
-            title: 'Bantuan Mendesak Terdekat',
-            subtitle:
-                'Ada permintaan tabung oksigen baru di Jl. Kaliurang KM 5, hanya 0.3 km dari lokasi Anda.',
-            time: '30 mnt lalu',
-            isUnread: true,
-          ),
-          _buildNotifItem(
-            icon: Icons.check_circle_rounded,
-            iconBg: AppColors.statusCompletedLight,
-            iconColor: AppColors.statusCompleted,
-            title: 'Donasi Berhasil Disalurkan',
-            subtitle:
-                'Sembako untuk RW 07 Condong Catur telah berhasil diterima oleh penerima manfaat.',
-            time: '2 jam lalu',
-            isUnread: true,
-          ),
-          _buildNotifItem(
-            icon: Icons.people_rounded,
-            iconBg: AppColors.primaryContainer,
-            iconColor: AppColors.primary,
-            title: 'Komentar Baru di Post Anda',
-            subtitle:
-                'Ahmad Ridwan dan 3 orang lainnya mengomentari postingan distribusi sembako Anda.',
-            time: '4 jam lalu',
-            isUnread: false,
-          ),
-          _buildSectionLabel('Kemarin'),
-          _buildNotifItem(
-            icon: Icons.volunteer_activism_rounded,
-            iconBg: const Color(0xFFE3F2FD),
-            iconColor: const Color(0xFF1565C0),
-            title: 'Permintaan Donasi Baru',
-            subtitle:
-                'Perbaikan Atap Sekolah Dasar 04 membutuhkan bantuan Anda. Dana terkumpul 62%.',
-            time: 'Kemarin, 14:32',
-            isUnread: false,
-          ),
-          _buildNotifItem(
-            icon: Icons.verified_rounded,
-            iconBg: AppColors.primaryContainer,
-            iconColor: AppColors.primary,
-            title: 'Akun Terverifikasi',
-            subtitle:
-                'Selamat! Akun Anda telah berhasil diverifikasi sebagai Verified Member.',
-            time: 'Kemarin, 09:00',
-            isUnread: false,
-          ),
-          _buildSectionLabel('Minggu Ini'),
-          _buildNotifItem(
-            icon: Icons.sync_rounded,
-            iconBg: AppColors.statusProgressLight,
-            iconColor: AppColors.statusProgress,
-            title: 'Status Bantuan Diperbarui',
-            subtitle:
-                'Bantuan Sembako Warga Isolasi RW 07 kini berstatus "On Progress". Estimasi selesai 2 hari.',
-            time: '3 hari lalu',
-            isUnread: false,
-          ),
-          _buildNotifItem(
-            icon: Icons.campaign_rounded,
-            iconBg: AppColors.urgencyMediumLight,
-            iconColor: AppColors.urgencyMedium,
-            title: 'Pengumuman Komunitas',
-            subtitle:
-                'Gerakan Jumat Berbagi akan diadakan minggu ini. Daftarkan diri Anda sebagai relawan sekarang!',
-            time: '5 hari lalu',
-            isUnread: false,
-          ),
-        ],
+      body: FutureBuilder<List<NotificationItem>>(
+        future: _loadNotifications(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Gagal memuat notifikasi. Silakan coba lagi.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          final notifications = snapshot.data ?? [];
+          if (notifications.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Tidak ada notifikasi terbaru.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: notifications.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 4),
+            itemBuilder: (context, index) {
+              final item = notifications[index];
+              return _buildNotifItem(
+                icon: _iconForType(item.iconType),
+                iconBg: _bgForType(item.iconType),
+                iconColor: _colorForType(item.iconType),
+                title: item.title,
+                subtitle: item.subtitle,
+                time: item.time,
+                isUnread: item.unread,
+              );
+            },
+          );
+        },
       ),
     );
   }
 
-  Widget _buildSectionLabel(String label) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        label,
-        style: AppTextStyles.captionUppercase.copyWith(
-          color: AppColors.textSecondary,
-        ),
-      ),
-    );
+  IconData _iconForType(String type) {
+    return switch (type) {
+      'bantuanDibutuhkan' => Icons.location_on_rounded,
+      'pertanyaan' => Icons.question_mark_rounded,
+      'updateKomunitas' => Icons.campaign_rounded,
+      'inspirasi' => Icons.lightbulb_outline_rounded,
+      'kisahSukses' => Icons.check_circle_rounded,
+      _ => Icons.notifications_outlined,
+    };
+  }
+
+  Color _colorForType(String type) {
+    return switch (type) {
+      'bantuanDibutuhkan' => AppColors.urgencyHigh,
+      'pertanyaan' => const Color(0xFF1565C0),
+      'updateKomunitas' => AppColors.primary,
+      'inspirasi' => AppColors.urgencyMedium,
+      'kisahSukses' => AppColors.statusCompleted,
+      _ => AppColors.primary,
+    };
+  }
+
+  Color _bgForType(String type) {
+    return switch (type) {
+      'bantuanDibutuhkan' => AppColors.urgencyHighLight,
+      'pertanyaan' => const Color(0xFFE3F2FD),
+      'updateKomunitas' => AppColors.primaryContainer,
+      'inspirasi' => AppColors.urgencyMediumLight,
+      'kisahSukses' => AppColors.statusCompletedLight,
+      _ => AppColors.primaryContainer,
+    };
   }
 
   Widget _buildNotifItem({
@@ -163,9 +179,8 @@ class NotificationScreen extends StatelessWidget {
                         child: Text(
                           title,
                           style: AppTextStyles.titleSmall.copyWith(
-                            fontWeight: isUnread
-                                ? FontWeight.w700
-                                : FontWeight.w600,
+                            fontWeight:
+                                isUnread ? FontWeight.w700 : FontWeight.w600,
                           ),
                         ),
                       ),
@@ -203,4 +218,22 @@ class NotificationScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class NotificationItem {
+  final String id;
+  final String title;
+  final String subtitle;
+  final String time;
+  final bool unread;
+  final String iconType;
+
+  NotificationItem({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.time,
+    required this.unread,
+    required this.iconType,
+  });
 }
