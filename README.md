@@ -31,6 +31,7 @@ cd ada-titik
 Sebelum menjalankan aplikasi, unduh semua library yang diperlukan dengan perintah:
 
 ```bash
+flutter clean
 flutter pub get
 ```
 
@@ -38,7 +39,7 @@ flutter pub get
 Setelah dependensi terinstal, jalankan aplikasi menggunakan perintah:
 
 ```bash
-flutter prun
+flutter run
 ```
 
 ## 💡 Catatan (Notes)
