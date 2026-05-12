@@ -31,6 +31,7 @@ cd ada-titik
 Sebelum menjalankan aplikasi, unduh semua library yang diperlukan dengan perintah:
 
 ```bash
+flutter clean
 flutter pub get
 ```
 
