@@ -23,6 +23,19 @@ class ApiClient {
           }
           return handler.next(options);
         },
+        onResponse: (response, handler) async {
+          if (response.statusCode == 401) {
+            await AuthStorage.clear();
+          }
+          return handler.next(response);
+        },
+        onError: (DioException e, handler) async {
+          final status = e.response?.statusCode;
+          if (status == 401) {
+            await AuthStorage.clear();
+          }
+          return handler.next(e);
+        },
       ),
     );
 
@@ -40,9 +53,21 @@ class ApiClient {
   static Future<Response<T>> post<T>(
     String path, {
     Map<String, dynamic>? query,
-    required dynamic data,
+    dynamic data,
+    Options? options,
+    CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
   }) {
-    return dio.post<T>(_url(path), queryParameters: query, data: data);
+    return dio.post<T>(
+      _url(path),
+      queryParameters: query,
+      data: data,
+      options: options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
   }
 
   static Future<Response<T>> patch<T>(

@@ -9,11 +9,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ada_titik/main.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 void main() {
   testWidgets('App smoke test: can build AdaTitikApp',
       (WidgetTester tester) async {
-    await tester.pumpWidget(const AdaTitikApp());
+    await tester.pumpWidget(
+      const ProviderScope(
+        child: AdaTitikApp(),
+      ),
+    );
 
     // Verify that the app starts.
     expect(find.byType(MaterialApp), findsOneWidget);

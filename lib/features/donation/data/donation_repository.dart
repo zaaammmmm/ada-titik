@@ -1,15 +1,41 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
+
 import '../../../core/network/api_client.dart';
+import '../../../core/services/location_service.dart';
 import '../../../shared/models/models.dart';
+import '../../../shared/utils/date_utils.dart' as AdaTitikDateUtils;
 
 class DonationRepository {
   const DonationRepository();
 
+  // ─── Helpers: parsing numerik string dari PostgreSQL ──────────────────────
+  // Backend (driver `pg`) mengembalikan DECIMAL/NUMERIC sebagai String.
+  // Contoh: goal_amount -> "5000000.00", avg_rating -> "4.50"
+  double _parseDouble(dynamic value, double fallback) {
+    if (value == null) return fallback;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
+  double? _parseNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  int _parseInt(dynamic value, int fallback) {
+    if (value == null) return fallback;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
   // --- Heatmap ---
-  /// Heatmap publik: GET /api/analytics/heatmap
-  /// Response contract (from Postman): data[] items contain:
-  /// - longitude: number
-  /// - latitude: number
-  /// - weight: 1..3  (1=Rendah, 2=Normal, 3=Mendesak)
   Future<List<Map<String, dynamic>>> getHeatmap() async {
     final res =
         await ApiClient.get<Map<String, dynamic>>('/api/analytics/heatmap');
@@ -32,13 +58,11 @@ class DonationRepository {
   Future<UserModel> getProfile() async {
     final res = await ApiClient.get<Map<String, dynamic>>('/api/users/profile');
     final body = res.data;
-    final data =
-        body?['data'] ?? body; // support either {data: {...}} or direct model
+    final data = body?['data'] ?? body;
     if (data is! Map<String, dynamic>) {
       throw StateError('Unexpected response format for profile');
     }
 
-    // Defensive mapping (keys may vary slightly)
     final id = data['id']?.toString() ?? '';
     final name =
         data['name']?.toString() ?? data['full_name']?.toString() ?? '';
@@ -61,26 +85,27 @@ class DonationRepository {
 
     final isVerified = data['is_verified'] == true || data['verified'] == true;
 
-    final donationCount = (data['donation_count'] ?? data['donationCount'])
-            is num
-        ? (data['donation_count'] ?? data['donationCount']).toString().isEmpty
-            ? 0
-            : (data['donation_count'] ?? data['donationCount']).toInt()
-        : (data['donationCount'] is int ? data['donationCount'] as int : 0);
+    // ✅ FIXED: gunakan _parseInt agar string "5" terparsing dengan benar
+    final donationCount = _parseInt(
+      data['donation_count'] ?? data['donationCount'],
+      0,
+    );
 
-    final communityPoints =
-        (data['community_points'] ?? data['communityPoints']) is num
-            ? (data['community_points'] ?? data['communityPoints']).toInt()
-            : 0;
+    final communityPoints = _parseInt(
+      data['community_points'] ?? data['communityPoints'],
+      0,
+    );
 
-    final pointsHelped = (data['points_helped'] ?? data['pointsHelped']) is num
-        ? (data['points_helped'] ?? data['pointsHelped']).toInt()
-        : 0;
+    final pointsHelped = _parseInt(
+      data['points_helped'] ?? data['pointsHelped'],
+      0,
+    );
 
-    final totalDonation =
-        (data['total_donation'] ?? data['totalDonation']) is num
-            ? (data['total_donation'] ?? data['totalDonation']).toDouble()
-            : 0.0;
+    // ✅ FIXED: backend mengembalikan "35000000" (String), bukan number
+    final totalDonation = _parseDouble(
+      data['total_donation'] ?? data['totalDonation'],
+      0.0,
+    );
 
     return UserModel(
       id: id,
@@ -113,6 +138,60 @@ class DonationRepository {
     return data.whereType<Map<String, dynamic>>().map(_mapActivity).toList();
   }
 
+  /// GET /api/users/activity (untuk komunitas): type=donation_managed
+  /// Shape v3: { id, title, subtitle, type, created_at, status, urgency, category }
+  /// Kita tampilkan sebagai list DonationRequest (karena FE butuh data titik).
+  Future<List<DonationRequest>> getManagedPoints() async {
+    // Ambil limit besar agar tab "Kelola Bantuan" tidak sering minta halaman.
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/users/activity',
+      query: {'page': 1, 'limit': 50},
+    );
+
+    final body = res.data ?? {};
+    final data = (body['data'] as List?) ?? [];
+
+    final items = data.whereType<Map<String, dynamic>>().toList();
+    final managed =
+        items.where((e) => (e['type']?.toString() ?? '') == 'donation_managed');
+
+    // catatan: backend activity donation_managed mengembalikan status/urgency/category.
+    // field koordinat tidak selalu tersedia, sehingga untuk aksi accept/complete
+    // FE tetap butuh detail dari /api/donations/:id.
+    return managed.map((e) {
+      final idStr = e['id']?.toString() ?? '';
+      final createdAt = e['created_at']?.toString() ?? '';
+
+      final urgency = _urgencyFromBackend(e['urgency']?.toString());
+      final status = _statusFromBackend(e['status']?.toString());
+      final category = e['category']?.toString() ?? 'Umum';
+
+      return DonationRequest(
+        id: idStr,
+        title: e['title']?.toString() ?? '',
+        description: e['subtitle']?.toString() ?? '',
+        authorName: '',
+        urgency: urgency,
+        status: status,
+        category: category,
+        location: '',
+        latitude: -7.7956,
+        longitude: 110.3695,
+        distanceKm: 0,
+        timeAgo: createdAt,
+        imageUrl: null,
+        goalAmount: _parseDouble(e['goal_amount'] ?? e['goalAmount'], 0.0),
+        collectedAmount:
+            _parseDouble(e['collected_amount'] ?? e['collectedAmount'], 0.0),
+        tags: const [],
+        goalText: null,
+        avgRating: null,
+        authorAvatar: null,
+        createdById: null,
+      );
+    }).toList();
+  }
+
   ActivityItem _mapActivity(Map<String, dynamic> item) {
     final title = item['title']?.toString() ??
         item['activity']?.toString() ??
@@ -126,12 +205,14 @@ class DonationRepository {
         item['meta']?.toString() ??
         '';
 
-    final timeAgo = item['created_at']?.toString() ??
+    final rawTime = item['created_at']?.toString() ??
         item['createdAt']?.toString() ??
         item['date']?.toString() ??
         item['time_ago']?.toString() ??
-        item['timeAgo']?.toString() ??
-        'Baru';
+        item['timeAgo']?.toString();
+    final timeAgo = rawTime != null && rawTime.contains('T')
+        ? AdaTitikDateUtils.DateUtils.formatTimeAgo(rawTime)
+        : rawTime ?? 'Baru';
 
     final type = item['type']?.toString() ??
         item['activity_type']?.toString() ??
@@ -192,13 +273,9 @@ class DonationRepository {
 
   DonationRequest _mapDonation(Map<String, dynamic> item) {
     final id = item['id']?.toString() ?? '';
-
     final title = item['title']?.toString() ?? '';
     final description = item['description']?.toString() ?? '';
 
-    // Backend schema: donation_points.created_by -> users.id.
-    // In JSON, commonly the creator/user may be embedded (author, createdBy, user).
-    // We defensively try multiple keys.
     final authorName = item['author_name']?.toString() ??
         item['created_by_name']?.toString() ??
         item['authorName']?.toString() ??
@@ -211,63 +288,49 @@ class DonationRepository {
 
     final urgency = _urgencyFromBackend(item['urgency']?.toString());
     final status = _statusFromBackend(item['status']?.toString());
-
     final category = item['category']?.toString() ?? 'Umum';
 
-    // Location: backend uses PostGIS geometry (Point, 4326).
-    // JSON may come as longitude/latitude keys.
-    double toDouble(dynamic v, double fallback) {
+    double toCoord(dynamic v, double fallback) {
       if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v) ?? fallback;
       return fallback;
     }
 
-    final longitude = toDouble(item['longitude'],
-        toDouble(item['lng'], toDouble(item['lon'], 110.3695)));
+    final longitude = toCoord(item['longitude'],
+        toCoord(item['lng'], toCoord(item['lon'], 110.3695)));
 
-    final latitude = toDouble(item['latitude'],
-        toDouble(item['lat'], toDouble(item['geo_lat'], -7.7956)));
+    final latitude = toCoord(item['latitude'],
+        toCoord(item['lat'], toCoord(item['geo_lat'], -7.7956)));
 
     final location = item['location']?.toString() ?? 'Lokasi belum tersedia';
 
-    // These are UI-specific convenience fields.
-    final distanceKm = (item['distance_km'] is num)
-        ? (item['distance_km'] as num).toDouble()
-        : (item['distanceKm'] is num)
-            ? (item['distanceKm'] as num).toDouble()
-            : (item['distance_meters'] is num)
-                ? ((item['distance_meters'] as num).toDouble() / 1000.0)
-                : 0.3;
-
-    final timeAgo = item['time_ago']?.toString() ??
+    final _rawTimeAgo = item['time_ago']?.toString() ??
         item['timeAgo']?.toString() ??
-        item['created_at']?.toString() ??
-        'Baru';
+        item['created_at']?.toString();
+    final timeAgo = _rawTimeAgo != null && _rawTimeAgo.contains('T')
+        ? AdaTitikDateUtils.DateUtils.formatTimeAgo(_rawTimeAgo)
+        : _rawTimeAgo ?? 'Baru';
 
     final imageUrl = item['image_url']?.toString() ??
         item['imageUrl']?.toString() ??
         item['photo_url']?.toString();
 
-    final goalAmount = (item['goal_amount'] is num)
-        ? (item['goal_amount'] as num).toDouble()
-        : (item['goalAmount'] is num)
-            ? (item['goalAmount'] as num).toDouble()
-            : (item['goal'] is num)
-                ? (item['goal'] as num).toDouble()
-                : 5000000.0;
+    // ✅ FIXED: backend mengembalikan "5000000.00" (String), bukan num.
+    // Dulu: `item['goal_amount'] is num` -> selalu false untuk String -> fallback hardcoded
+    final goalAmount = _parseDouble(
+      item['goal_amount'] ?? item['goalAmount'] ?? item['goal'],
+      0.0, // default 0 (tidak hardcode 5_000_000)
+    );
 
-    final collectedAmount = (item['collected_amount'] is num)
-        ? (item['collected_amount'] as num).toDouble()
-        : (item['collectedAmount'] is num)
-            ? (item['collectedAmount'] as num).toDouble()
-            : 2500000.0;
+    final collectedAmount = _parseDouble(
+      item['collected_amount'] ?? item['collectedAmount'],
+      0.0, // default 0 (tidak hardcode 2_500_000)
+    );
 
-    final avgRating = (item['avg_rating'] is num)
-        ? (item['avg_rating'] as num).toDouble()
-        : (item['avgRating'] is num)
-            ? (item['avgRating'] as num).toDouble()
-            : (item['avg_score'] is num)
-                ? (item['avg_score'] as num).toDouble()
-                : null;
+    // ✅ FIXED: avg_rating juga bisa datang sebagai String "4.50"
+    final avgRating = _parseNullableDouble(
+      item['avg_rating'] ?? item['avgRating'] ?? item['avg_score'],
+    );
 
     final tagsRaw = item['tags'];
     final tags = <String>[];
@@ -281,12 +344,30 @@ class DonationRepository {
     final goalText =
         item['goal_text']?.toString() ?? item['goalText']?.toString();
 
+    // final distanceMeters = _parseDouble(
+    //   item['distance_meters'] ?? item['distance'],
+    //   0,
+    // );
+
+    final distanceMeters = double.tryParse(
+          (item['distance_meters'] ?? 0).toString(),
+        ) ??
+        0;
+
+    final createdById =
+        item['created_by']?.toString() ?? item['createdById']?.toString();
+
+    final distanceKm = distanceMeters > 0
+        ? (distanceMeters / 1000.0)
+        : 0.0; // jarak dari backend jika ada, fallback 0
+
     return DonationRequest(
       id: id,
       title: title,
       description: description,
       authorName: authorName,
       authorAvatar: authorAvatar,
+      createdById: createdById,
       urgency: urgency,
       status: status,
       category: category,
@@ -376,17 +457,29 @@ class DonationRepository {
     return data.whereType<Map<String, dynamic>>().map(_mapDonation).toList();
   }
 
+  // ✅ FIXED: lat/lng tidak lagi hardcoded — diambil dari GPS user
   Future<List<FeedPost>> getNearbyNotifications({
-    double lat = -7.7956,
-    double lng = 110.3695,
+    double? lat,
+    double? lng,
     int radiusMeters = 5000,
-    int limit = 5,
+    int limit = 10,
   }) async {
+    double resolvedLat = lat ?? LocationService.defaultCenter.latitude;
+    double resolvedLng = lng ?? LocationService.defaultCenter.longitude;
+
+    if (lat == null || lng == null) {
+      final pos = await LocationService.instance.getCurrentPosition();
+      if (pos != null) {
+        resolvedLat = pos.latitude;
+        resolvedLng = pos.longitude;
+      }
+    }
+
     final res = await ApiClient.get<Map<String, dynamic>>(
       '/api/notifications/nearby',
       query: {
-        'lat': lat,
-        'lng': lng,
+        'lat': resolvedLat,
+        'lng': resolvedLng,
         'radius': radiusMeters,
         'limit': limit,
       },
@@ -400,42 +493,46 @@ class DonationRepository {
         .toList();
   }
 
+  // ✅ FIXED: mapping field sesuai response shape v3:
+  // { id, title: "Bantuan baru di dekat Anda", subtitle: <judul titik>,
+  //   type, urgency, category, distance_meters, point_id }
   FeedPost _mapNotification(Map<String, dynamic> item) {
     final id = item['id']?.toString() ?? '';
-    final title = item['title']?.toString() ?? item['name']?.toString() ?? '';
-    final description =
-        item['description']?.toString() ?? item['content']?.toString() ?? '';
-    final authorName = item['created_by_name']?.toString() ??
-        item['author_name']?.toString() ??
-        item['user_name']?.toString() ??
-        'Komunitas';
-    final authorRole =
-        item['role']?.toString() ?? item['type']?.toString() ?? 'Komunitas';
-    final timeAgo = item['time_ago']?.toString() ??
-        item['created_at']?.toString() ??
+    final pointId = item['point_id']?.toString() ?? '';
+
+    // v3: 'title' = label konstan; 'subtitle' = judul titik bantuan sebenarnya
+    final judul = item['subtitle']?.toString() ??
+        item['title']?.toString() ??
+        'Bantuan Dibutuhkan';
+
+    final category = item['category']?.toString() ?? 'Umum';
+    final urgency = item['urgency']?.toString() ?? '';
+    final timeAgo = item['created_at']?.toString() ??
         item['createdAt']?.toString() ??
         'Baru';
-    final imageUrl =
-        item['image_url']?.toString() ?? item['photo_url']?.toString();
-    final rawUrgency = item['urgency']?.toString().toLowerCase() ?? '';
-    final type = rawUrgency.contains('mendesak')
+
+    final type = urgency.toLowerCase().contains('mendesak')
         ? FeedPostType.bantuanDibutuhkan
         : FeedPostType.updateKomunitas;
 
     return FeedPost(
       id: id,
-      authorName: authorName,
-      authorRole: authorRole,
-      content: title.isNotEmpty ? '$title\n\n$description' : description,
+      authorName: 'Bantuan Baru',
+      authorRole: category,
+      content: judul,
       timeAgo: timeAgo,
       type: type,
-      imageUrl: imageUrl,
+      imageUrl: null,
       likes: 0,
       comments: 0,
-      tagLabel: 'BANTUAN DIBUTUHKAN',
+      tagLabel:
+          urgency.isNotEmpty ? urgency.toUpperCase() : 'BANTUAN DIBUTUHKAN',
+      likedByMe: false,
+      pointId: pointId,
     );
   }
 
+  // ✅ FIXED: tambah parameter goalAmount yang sebelumnya tidak dikirim ke backend
   Future<DonationRequest> createDonation({
     required String title,
     required String description,
@@ -443,6 +540,7 @@ class DonationRepository {
     required double longitude,
     UrgencyLevel urgency = UrgencyLevel.normal,
     String? category,
+    double goalAmount = 0,
   }) async {
     final res = await ApiClient.post<Map<String, dynamic>>(
       '/api/donations',
@@ -453,8 +551,17 @@ class DonationRepository {
         'longitude': longitude,
         'urgency': _urgencyToBackend(urgency),
         if (category != null) 'category': category,
+        'goal_amount': goalAmount, // ✅ sebelumnya tidak dikirim sama sekali
       },
     );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 201) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal membuat titik bantuan ($statusCode)';
+      throw Exception(msg);
+    }
 
     final body = res.data;
     final data = body?['data'];
@@ -464,41 +571,49 @@ class DonationRepository {
     throw StateError('Unexpected response format for create donation');
   }
 
-  Future<DonationRequest> updateStatus({
+  // ✅ FIXED SEPENUHNYA:
+  // 1. Endpoint diubah dari /api/donations/:id -> /api/donations/:id/status
+  // 2. Tambah parameter userLat/userLng (wajib untuk status Completed / geo-fencing)
+  // 3. Error handling berdasarkan status code dari API Docs
+  Future<void> updateStatus({
     required String requestId,
     required RequestStatus status,
+    double? userLat,
+    double? userLng,
   }) async {
-    final res = await ApiClient.patch<Map<String, dynamic>>(
-      '/api/donations/$requestId',
-      data: {
-        // defensif: backend kemungkinan menerima field `status`
-        // atau variasi lain; kita pakai yang umum sesuai TODO.
-        'status': _statusToBackend(status),
-      },
-    );
+    final body = <String, dynamic>{
+      'status': _statusToBackend(status),
+    };
 
-    final body = res.data;
-    final data = body?['data'];
-    if (data is Map<String, dynamic>) {
-      return _mapDonation(data);
+    if (status == RequestStatus.completed) {
+      if (userLat == null || userLng == null) {
+        throw Exception(
+          'GPS wajib aktif untuk menyelesaikan titik bantuan (geo-fencing ≤100m).',
+        );
+      }
+      body['user_lat'] = userLat;
+      body['user_lng'] = userLng;
     }
 
-    // Fallback: kalau backend balikin data tidak terstruktur
-    // tetap kembalikan id + status minimal.
-    return DonationRequest(
-      id: requestId,
-      title: '',
-      description: '',
-      authorName: '',
-      authorAvatar: null,
-      urgency: UrgencyLevel.normal,
-      status: status,
-      category: '',
-      location: '',
-      timeAgo: 'Baru',
-      imageUrl: null,
-      avgRating: null,
+    final res = await ApiClient.patch<Map<String, dynamic>>(
+      '/api/donations/$requestId/status', // ✅ endpoint benar
+      data: body,
     );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode == 403) {
+      final msg = res.data?['error']?.toString() ?? 'Akses ditolak';
+      throw Exception(msg);
+    }
+    if (statusCode == 404) {
+      throw Exception('Titik bantuan tidak ditemukan.');
+    }
+    if (statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal memperbarui status ($statusCode)';
+      throw Exception(msg);
+    }
   }
 
   // --- Ratings ---
@@ -510,19 +625,38 @@ class DonationRepository {
     return data.whereType<Map<String, dynamic>>().toList();
   }
 
+  // ✅ FIXED: point_id dikirim sebagai integer, bukan String
+  // API backend mensyaratkan point_id bertipe integer
   Future<void> createRating({
     required String pointId,
     required int score,
     String? review,
   }) async {
-    await ApiClient.post<Map<String, dynamic>>(
+    final pointIdInt = int.tryParse(pointId);
+    if (pointIdInt == null) {
+      throw ArgumentError('point_id tidak valid: $pointId');
+    }
+
+    final res = await ApiClient.post<Map<String, dynamic>>(
       '/api/ratings',
       data: {
-        'point_id': pointId,
+        'point_id': pointIdInt, // ✅ integer, bukan String
         'score': score,
-        if (review != null) 'review': review,
+        if (review != null && review.trim().isNotEmpty) 'review': review.trim(),
       },
     );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode == 409) {
+      throw Exception(
+          'Anda sudah pernah memberi rating untuk titik bantuan ini.');
+    }
+    if (statusCode != 201 && statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal mengirim rating ($statusCode)';
+      throw Exception(msg);
+    }
   }
 
   // --- Documentation ---
@@ -539,14 +673,29 @@ class DonationRepository {
     required String photoUrl,
     String? caption,
   }) async {
+    final bytes = _dataUrlToBytes(photoUrl);
+
+    final formData = FormData.fromMap({
+      'point_id': pointId,
+      if (caption != null) 'caption': caption,
+      'photo': MultipartFile.fromBytes(
+        bytes,
+        filename: 'documentation-$pointId.jpg',
+      ),
+    });
+
     await ApiClient.post<Map<String, dynamic>>(
       '/api/documentation',
-      data: {
-        'point_id': pointId,
-        'photo_url': photoUrl,
-        if (caption != null) 'caption': caption,
-      },
+      data: formData,
+      options: Options(contentType: 'multipart/form-data'),
     );
+  }
+
+  List<int> _dataUrlToBytes(String dataUrl) {
+    final idx = dataUrl.indexOf('base64,');
+    if (idx == -1) return [];
+    final b64 = dataUrl.substring(idx + 'base64,'.length);
+    return base64Decode(b64);
   }
 
   // --- Reports ---
@@ -561,5 +710,139 @@ class DonationRepository {
         'reason': reason,
       },
     );
+  }
+
+  // ✅ NEW: Create report with category
+  Future<void> createReportWithCategory({
+    required String pointId,
+    required String category,
+    required String reason,
+  }) async {
+    final res = await ApiClient.post<Map<String, dynamic>>(
+      '/api/reports',
+      data: {
+        'point_id': pointId,
+        'reason': reason,
+        'category': category,
+      },
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 201 && statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal mengirim laporan ($statusCode)';
+      throw Exception(msg);
+    }
+  }
+
+  // ✅ NEW: Update donation status with geo-fencing for Completed
+  Future<void> updateDonationStatus({
+    required String pointId,
+    required String status,
+    double? userLat,
+    double? userLng,
+  }) async {
+    final validStatuses = ['Open', 'On Progress', 'Completed'];
+    if (!validStatuses.contains(status)) {
+      throw ArgumentError('Status tidak valid: $status');
+    }
+
+    // For Completed status, require user location for geo-fencing
+    if (status == 'Completed') {
+      if (userLat == null || userLng == null) {
+        throw ArgumentError(
+            'Lokasi user (userLat, userLng) diperlukan untuk status Completed');
+      }
+    }
+
+    final data = {
+      'status': status,
+      if (userLat != null) 'user_lat': userLat,
+      if (userLng != null) 'user_lng': userLng,
+    };
+
+    final res = await ApiClient.patch<Map<String, dynamic>>(
+      '/api/donations/$pointId/status',
+      data: data,
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode == 403) {
+      throw Exception(
+          'Anda tidak diizinkan mengubah status titik ini atau jarak > 100 meter');
+    }
+    if (statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal mengubah status ($statusCode)';
+      throw Exception(msg);
+    }
+  }
+
+  // ✅ NEW: Get donation detail with ratings and documentation
+  Future<
+      ({
+        DonationRequest point,
+        List<RatingModel> ratings,
+        List<Map<String, dynamic>> documentation
+      })> getDonationDetail(String pointId) async {
+    try {
+      // Fetch point detail
+      final pointRes = await ApiClient.get<Map<String, dynamic>>(
+        '/api/donations/$pointId',
+      );
+      final pointData = pointRes.data?['data'] ?? pointRes.data;
+      if (pointData is! Map<String, dynamic>) {
+        throw StateError('Invalid point data format');
+      }
+
+      final point = _mapDonation(pointData);
+
+      // Fetch ratings
+      final ratingsRes = await ApiClient.get<Map<String, dynamic>>(
+        '/api/ratings/$pointId',
+      );
+      final ratingsData = (ratingsRes.data?['data'] as List?) ?? [];
+      final ratings = ratingsData
+          .whereType<Map<String, dynamic>>()
+          .map(_mapRating)
+          .toList();
+
+      // Fetch documentation
+      final docsRes = await ApiClient.get<Map<String, dynamic>>(
+        '/api/documentation/$pointId',
+      );
+      final docsData = (docsRes.data?['data'] as List?) ?? [];
+      final documentation = docsData.whereType<Map<String, dynamic>>().toList();
+
+      return (point: point, ratings: ratings, documentation: documentation);
+    } catch (e) {
+      print('❌ Error getting donation detail: $e');
+      rethrow;
+    }
+  }
+
+  RatingModel _mapRating(Map<String, dynamic> item) {
+    return RatingModel(
+      id: item['id']?.toString() ?? '',
+      pointId: item['point_id']?.toString() ?? '',
+      raterName: item['user_name']?.toString() ??
+          item['rater_name']?.toString() ??
+          'Anonim',
+      raterAvatar:
+          item['user_avatar']?.toString() ?? item['rater_avatar']?.toString(),
+      score: _parseInt(item['score'], 5),
+      review: item['review']?.toString(),
+      createdAt: _parseDateTime(item['created_at']),
+    );
+  }
+
+  DateTime _parseDateTime(dynamic value) {
+    if (value == null) return DateTime.now();
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.now();
+    }
+    return DateTime.now();
   }
 }

@@ -44,15 +44,6 @@ class _SearchScreenState extends State<SearchScreen> {
   Future<List<DonationRequest>> _loadResults() async {
     final repo = DonationRepository();
 
-    final query = <String, dynamic>{
-      if (_query.trim().isNotEmpty) 'search': _query.trim(),
-      if (_selectedUrgency != 'Semua') 'urgency': _selectedUrgency,
-      if (_selectedStatus != 'Semua') 'status': _selectedStatus,
-      if (_selectedCategory != 'Semua') 'category': _selectedCategory,
-      'page': 1,
-      'limit': 50,
-    };
-
     final results = await repo.getAll(
       urgency: _selectedUrgency != 'Semua'
           ? _selectedUrgency == 'Mendesak'

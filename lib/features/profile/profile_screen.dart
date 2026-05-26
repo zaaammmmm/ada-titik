@@ -1,23 +1,24 @@
-// lib/features/profile/profile_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/network/auth_storage.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
+import '../../shared/widgets/app_widgets.dart';
 
 import '../donation/donation_history_screen.dart';
-import '../../shared/widgets/app_widgets.dart';
-import '../notification/notification_screen.dart';
+import 'account_settings_screen.dart';
+import 'edit_profile_dialog.dart';
 
-import '../../core/network/auth_storage.dart';
-import '../auth/login_screen.dart';
-
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final repo = DonationRepository();
 
     return FutureBuilder<UserModel>(
@@ -36,14 +37,7 @@ class ProfileScreen extends StatelessWidget {
           return Scaffold(
             backgroundColor: AppColors.background,
             appBar: AdaTitikAppBar(
-              onNotification: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const NotificationScreen(),
-                  ),
-                );
-              },
+              onNotification: () => context.push('/home/notification'),
             ),
             body: Center(
               child: Padding(
@@ -62,16 +56,17 @@ class ProfileScreen extends StatelessWidget {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AdaTitikAppBar(
-            onNotification: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const NotificationScreen(),
-                ),
-              );
+            onNotification: () => context.push('/home/notification'),
+          ),
+          body: _ProfileContent(
+            user: snapshot.data!,
+            onLogout: () async {
+              await AuthStorage.clear();
+              ref.invalidate(authProvider);
+              if (!context.mounted) return;
+              context.go('/login');
             },
           ),
-          body: _ProfileContent(user: snapshot.data!),
         );
       },
     );
@@ -80,7 +75,26 @@ class ProfileScreen extends StatelessWidget {
 
 class _ProfileContent extends StatelessWidget {
   final UserModel user;
-  const _ProfileContent({required this.user});
+  final Future<void> Function() onLogout;
+
+  Future<void> _openEditProfileDialog(BuildContext context,
+      {required UserModel user}) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => EditProfileDialog(user: user),
+    );
+    // Parent screen refresh is handled by reloading profile in next iteration; for now just close.
+    if (result == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Profil berhasil diperbarui')),
+      );
+    }
+  }
+
+  const _ProfileContent({
+    required this.user,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +102,7 @@ class _ProfileContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildProfileCard(context, user),
+          _buildProfileCard(context),
           const SizedBox(height: 12),
           _buildQuickLinks(context),
           const SizedBox(height: 20),
@@ -97,7 +111,7 @@ class _ProfileContent extends StatelessWidget {
             child: Text('Your Impact', style: AppTextStyles.headlineMedium),
           ),
           const SizedBox(height: 12),
-          _buildImpactCards(user),
+          _buildImpactCards(),
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -106,7 +120,12 @@ class _ProfileContent extends StatelessWidget {
               children: [
                 Text('Recent Activity', style: AppTextStyles.headlineMedium),
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DonationHistoryScreen(),
+                    ),
+                  ),
                   child: Text(
                     'View All',
                     style: AppTextStyles.labelMedium.copyWith(
@@ -128,7 +147,7 @@ class _ProfileContent extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileCard(BuildContext context, UserModel user) {
+  Widget _buildProfileCard(BuildContext context) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -148,12 +167,10 @@ class _ProfileContent extends StatelessWidget {
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              CircleAvatar(
-                radius: 44,
-                backgroundImage: NetworkImage(
-                  user.avatarUrl ?? 'https://i.pravatar.cc/150?img=12',
-                ),
-                backgroundColor: AppColors.primaryContainer,
+              UserAvatar(
+                avatarUrl: user.avatarUrl,
+                name: user.name,
+                size: 88,
               ),
               Container(
                 width: 22,
@@ -198,7 +215,7 @@ class _ProfileContent extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () {},
+              onPressed: () => _openEditProfileDialog(context, user: user),
               icon: const Icon(Icons.edit_outlined, size: 16),
               label: const Text('Edit Profile'),
               style: ElevatedButton.styleFrom(
@@ -238,7 +255,20 @@ class _ProfileContent extends StatelessWidget {
       _QuickLink(
         icon: Icons.manage_accounts_outlined,
         label: 'Pengaturan Akun',
-        onTap: () {},
+        onTap: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AccountSettingsScreen(user: user),
+            ),
+          );
+          if (result == true) {
+            // Trigger parent ProfileScreen to reload
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Pengaturan akun disimpan')),
+            );
+          }
+        },
       ),
     ];
 
@@ -300,34 +330,33 @@ class _ProfileContent extends StatelessWidget {
     );
   }
 
-  Widget _buildImpactCards(UserModel user) {
+  Widget _buildImpactCards() {
+    // Untuk komunitas: donationCount = titik yang dibuat, communityPoints = poin dari membuat titik
+    // Untuk donatur: donationCount = rating yang diberikan, communityPoints = poin dari rating
+    final isKomunitas = user.role.toLowerCase() == 'komunitas';
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
           _ImpactCard(
-            icon: Icons.account_balance_wallet_outlined,
-            label: 'Total Donasi',
-            value: 'Rp ${user.totalDonation.toStringAsFixed(0)}',
-            sub: 'Lifetime contribution',
-            iconColor: AppColors.primary,
-            iconBg: AppColors.primaryContainer,
-          ),
-          const SizedBox(height: 12),
-          _ImpactCard(
             icon: Icons.local_shipping_outlined,
-            label: 'Bantuan Disalurkan',
-            value: '${user.donationCount}',
-            sub: 'Successful deliveries',
+            label: 'Bantuan Terselesaikan',
+            value: '${user.pointsHelped}',
+            sub: isKomunitas
+                ? 'Titik yang sudah selesai distribusi'
+                : 'Titik yang telah Anda bantu',
             iconColor: const Color(0xFF1565C0),
             iconBg: const Color(0xFFE3F2FD),
           ),
           const SizedBox(height: 12),
           _ImpactCard(
             icon: Icons.emoji_events_outlined,
-            label: 'Poin Komunitas',
+            label: 'Poin ${isKomunitas ? "Komunitas" : "Donatur"}',
             value: '${user.communityPoints}',
-            sub: 'Top 15% Contributor',
+            sub: isKomunitas
+                ? 'Poin dari membuat titik & donasi'
+                : 'Poin dari memberikan rating',
             iconColor: AppColors.textSecondary,
             iconBg: AppColors.surfaceVariant,
           ),
@@ -479,43 +508,32 @@ class _ProfileContent extends StatelessWidget {
       _ => AppColors.urgencyMedium,
     };
   }
-}
 
-Widget _buildLogoutButton(BuildContext context) {
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton(
-        onPressed: () async {
-          await AuthStorage.clear();
-
-          if (!context.mounted) return;
-
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => const LoginScreen(),
+  Widget _buildLogoutButton(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: ElevatedButton(
+          onPressed: () => onLogout(),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade700,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
-            (_) => false,
-          );
-        },
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.red.shade700,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
           ),
-        ),
-        child: Text(
-          'Logout',
-          style: AppTextStyles.buttonMedium.copyWith(
-            fontWeight: FontWeight.w700,
+          child: Text(
+            'Logout',
+            style: AppTextStyles.buttonMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _QuickLink {

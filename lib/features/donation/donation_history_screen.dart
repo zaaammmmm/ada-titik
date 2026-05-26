@@ -4,6 +4,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
+import '../../features/donation/request_detail_screen.dart';
+import 'kelola_card.dart';
 
 class DonationHistoryScreen extends StatefulWidget {
   const DonationHistoryScreen({super.key});
@@ -122,69 +124,9 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
     );
   }
 
-  Widget _buildDonationCard({
-    required String title,
-    required String amount,
-    required String date,
-    required RequestStatus status,
-    required String category,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.volunteer_activism_outlined,
-              color: AppColors.primary,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: AppTextStyles.titleSmall),
-                const SizedBox(height: 2),
-                Text(
-                  amount,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(date, style: AppTextStyles.bodySmall),
-              ],
-            ),
-          ),
-          _StatusBadge(status: status),
-        ],
-      ),
-    );
-  }
-
   Widget _buildKelolaBantuanTab() {
-    return FutureBuilder<List<ActivityItem>>(
-      future: _activityFuture,
+    return FutureBuilder<List<DonationRequest>>(
+      future: _repo.getManagedPoints(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -192,7 +134,7 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'Gagal memuat riwayat bantuan.',
+              'Gagal memuat kelola bantuan.',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -200,11 +142,11 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
           );
         }
 
-        final activities = snapshot.data ?? [];
-        if (activities.isEmpty) {
+        final points = snapshot.data ?? [];
+        if (points.isEmpty) {
           return Center(
             child: Text(
-              'Belum ada riwayat bantuan.',
+              'Belum ada titik bantuan yang dikelola.',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -214,9 +156,23 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
 
         return ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: activities.length,
+          itemCount: points.length,
           separatorBuilder: (_, __) => const SizedBox(height: 16),
-          itemBuilder: (context, i) => _buildActivityCard(activities[i]),
+          itemBuilder: (context, i) {
+            final p = points[i];
+            return KelolaCard(
+              request: p,
+              onOpenDetail: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => RequestDetailScreen(request: p),
+                  ),
+                );
+                setState(() {});
+              },
+            );
+          },
         );
       },
     );
@@ -294,63 +250,5 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
       'donation' => AppColors.urgencyHigh,
       _ => AppColors.urgencyMedium,
     };
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  final RequestStatus status;
-  const _StatusBadge({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    Color color;
-    Color bg;
-    String label;
-    IconData? icon;
-
-    switch (status) {
-      case RequestStatus.open:
-        color = AppColors.statusOpen;
-        bg = AppColors.statusOpenLight;
-        label = 'Open';
-        icon = null;
-        break;
-      case RequestStatus.onProgress:
-        color = AppColors.statusProgress;
-        bg = AppColors.statusProgressLight;
-        label = 'In Progress';
-        icon = Icons.sync_rounded;
-        break;
-      case RequestStatus.completed:
-        color = AppColors.statusCompleted;
-        bg = AppColors.statusCompletedLight;
-        label = 'Completed';
-        icon = Icons.check_circle_rounded;
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, color: color, size: 13),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
-            style: AppTextStyles.labelSmall.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

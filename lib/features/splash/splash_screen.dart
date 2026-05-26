@@ -1,25 +1,29 @@
-// lib/features/auth/splash_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../auth/onboarding_screen.dart';
+import '../../core/providers/auth_provider.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
+class _SplashScreenState extends ConsumerState<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
+  bool _navigated = false;
 
   @override
   void initState() {
     super.initState();
+
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -36,20 +40,31 @@ class _SplashScreenState extends State<SplashScreen>
         curve: const Interval(0.0, 0.6, curve: Curves.easeOutBack),
       ),
     );
-    _controller.forward();
 
-    Future.delayed(const Duration(seconds: 2, milliseconds: 500), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const OnboardingScreen(),
-            transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(opacity: anim, child: child),
-            transitionDuration: const Duration(milliseconds: 400),
-          ),
-        );
-      }
-    });
+    // Defer decision to next frame to allow authProvider.init() to run.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _decide());
+
+    _controller.forward();
+  }
+
+  Future<void> _decide() async {
+    if (_navigated) return;
+
+    final auth = ref.read(authProvider);
+
+    // Wait until init() completes.
+    if (auth.loading) return;
+
+    _navigated = true;
+
+    if (!context.mounted) return;
+
+    if (auth.user == null || auth.token == null) {
+      context.go('/login');
+      return;
+    }
+
+    context.go(auth.isAdmin ? '/admin' : '/home');
   }
 
   @override
@@ -60,6 +75,15 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final auth = ref.watch(authProvider);
+
+    // Fix: re-trigger navigation after auth init finishes.
+    // We cannot use ref.listen in initState.
+    if (!_navigated && !auth.loading) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _decide());
+    }
+
+    // Only render UI; redirection is handled in _decide().
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F6),
       body: Center(
@@ -70,19 +94,22 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Logo
                 _buildLogo(),
                 const SizedBox(height: 24),
-                // Brand Name
                 Text(
                   'Ada Titik?',
                   style: AppTextStyles.brandTitle.copyWith(fontSize: 32),
                 ),
                 const SizedBox(height: 200),
-                // Tagline
                 Text(
                   'EMPOWERING LOCAL IMPACT',
                   style: AppTextStyles.captionUppercase,
+                ),
+                const SizedBox(height: 24),
+                const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ],
             ),
@@ -111,7 +138,6 @@ class _SplashScreenState extends State<SplashScreen>
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Map placeholder circles
           Positioned(
             bottom: 8,
             left: 8,
@@ -124,9 +150,7 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
           ),
-          // Pin icon
           Icon(Icons.location_on_rounded, color: AppColors.primary, size: 54),
-          // Heart overlay
           Positioned(
             top: 26,
             child: Icon(Icons.favorite_rounded, color: Colors.white, size: 22),

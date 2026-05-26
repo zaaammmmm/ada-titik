@@ -17,13 +17,19 @@ class ActiveRequestsScreen extends StatefulWidget {
 
 class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
   bool _isListView = true;
-  String _selectedFilter = 'All Types';
+
+  // ✅ FIXED: label filter sekarang menggunakan nilai backend Bahasa Indonesia
+  // Sebelumnya: 'All Types', 'Food & Water', 'Medical', 'Clothes', 'Infra'
+  // yang tidak pernah cocok dengan nilai backend: 'Pangan', 'Medis', dst.
+  String _selectedFilter = 'Semua';
   final List<String> _filters = [
-    'All Types',
-    'Food & Water',
-    'Medical',
-    'Clothes',
-    'Infra',
+    'Semua',
+    'Pangan',
+    'Medis',
+    'Pendidikan',
+    'Infrastruktur',
+    'Pakaian',
+    'Lainnya',
   ];
 
   @override
@@ -45,7 +51,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                 Text('Active Requests', style: AppTextStyles.headlineLarge),
                 const SizedBox(height: 4),
                 Text(
-                  'Find nearby community members in need of assistance.',
+                  'Temukan anggota komunitas yang membutuhkan bantuan di sekitar Anda.',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -60,7 +66,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Filter row
+                // ✅ FIXED: filter chips menggunakan label Indonesia yang sesuai backend
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
@@ -81,20 +87,17 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  'Loading requests from backend...',
-                  style: AppTextStyles.bodySmall,
-                ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 4),
           Expanded(
             child: FutureBuilder<List<DonationRequest>>(
+              // ✅ FIXED: category dikirim sebagai nilai backend yang benar
+              // 'Semua' -> null (tidak filter), selain itu langsung dikirim
               future: DonationRepository().getAll(
                 status: RequestStatus.open,
-                page: 1,
-                limit: 20,
+                category: _selectedFilter == 'Semua' ? null : _selectedFilter,
               ),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -102,44 +105,56 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                 }
                 if (snapshot.hasError) {
                   return Center(
-                    child: Text(
-                      'Failed to load requests',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  );
-                }
-                final requests = snapshot.data ?? [];
-                if (requests.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No requests found',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'Gagal memuat permintaan.\n${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: () => setState(() {}),
+                            child: const Text('Coba Lagi'),
+                          ),
+                        ],
                       ),
                     ),
                   );
                 }
 
-                return ListView.separated(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  itemCount: requests.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final req = requests[index];
-                    return _RequestCard(
-                      request: req,
-                      isNearest: index == 0,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => RequestDetailScreen(request: req),
+                final requests = snapshot.data ?? [];
+                if (requests.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        _selectedFilter == 'Semua'
+                            ? 'Tidak ada permintaan aktif saat ini.'
+                            : 'Tidak ada permintaan aktif untuk kategori "$_selectedFilter".',
+                        textAlign: TextAlign.center,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
                         ),
                       ),
-                    );
-                  },
+                    ),
+                  );
+                }
+
+                return RefreshIndicator(
+                  onRefresh: () async => setState(() {}),
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    itemCount: requests.length,
+                    itemBuilder: (context, index) {
+                      return _RequestCard(request: requests[index]);
+                    },
+                  ),
                 );
               },
             ),
@@ -150,30 +165,32 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
   }
 
   Widget _viewToggle(bool isList, IconData icon, String label) {
-    final isActive = _isListView == isList;
+    final isSelected = _isListView == isList;
     return GestureDetector(
       onTap: () => setState(() => _isListView = isList),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.primary : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isActive ? AppColors.primary : AppColors.border,
+            color: isSelected ? AppColors.primary : AppColors.border,
           ),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               icon,
               size: 16,
-              color: isActive ? Colors.white : AppColors.textSecondary,
+              color: isSelected ? Colors.white : AppColors.textSecondary,
             ),
             const SizedBox(width: 6),
             Text(
               label,
               style: AppTextStyles.labelSmall.copyWith(
-                color: isActive ? Colors.white : AppColors.textSecondary,
+                color: isSelected ? Colors.white : AppColors.textSecondary,
               ),
             ),
           ],
@@ -184,17 +201,18 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
 
   Widget _filterBtn(String icon, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(20),
-        color: AppColors.surface,
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text('≡', style: AppTextStyles.labelMedium),
-          const SizedBox(width: 4),
-          Text(label, style: AppTextStyles.labelMedium),
+          Text(icon, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 6),
+          Text(label, style: AppTextStyles.labelSmall),
         ],
       ),
     );
@@ -203,60 +221,41 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
 
 class _RequestCard extends StatelessWidget {
   final DonationRequest request;
-  final bool isNearest;
-  final VoidCallback onTap;
-  const _RequestCard({
-    required this.request,
-    required this.isNearest,
-    required this.onTap,
-  });
+  const _RequestCard({required this.request});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RequestDetailScreen(request: request),
+        ),
+      ),
       child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.divider),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
         ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isNearest)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
+            if (request.imageUrl != null)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(14),
                 ),
-                decoration: const BoxDecoration(
-                  color: AppColors.primaryContainer,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Icon(
-                      Icons.navigation_rounded,
-                      size: 14,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Nearest to you',
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
+                child: Image.network(
+                  request.imageUrl!,
+                  height: 140,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 60,
+                    color: AppColors.primaryContainer,
+                  ),
                 ),
               ),
             Padding(
@@ -309,10 +308,40 @@ class _RequestCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 10),
+                  // Progress bar donasi
+                  if (request.goalAmount > 0) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Terkumpul',
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.textSecondary),
+                        ),
+                        Text(
+                          '${((request.collectedAmount / request.goalAmount) * 100).clamp(0, 100).toStringAsFixed(0)}%',
+                          style: AppTextStyles.labelSmall
+                              .copyWith(color: AppColors.primary),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: (request.collectedAmount / request.goalAmount)
+                            .clamp(0.0, 1.0),
+                        minHeight: 6,
+                        backgroundColor: AppColors.surfaceVariant,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text(
-                      'View Details',
+                      'Lihat Detail →',
                       style: AppTextStyles.labelMedium.copyWith(
                         color: AppColors.primary,
                       ),

@@ -3,8 +3,16 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/models/models.dart';
-import '../../core/network/api_client.dart';
-import 'data/donation_repository.dart';
+import 'dart:io';
+import 'dart:convert';
+
+import 'package:latlong2/latlong.dart';
+
+import 'package:image_picker/image_picker.dart';
+
+import '../../features/donation/data/donation_repository.dart';
+import 'location_picker_screen.dart';
+import '../../core/services/location_service.dart';
 
 class AddTitikScreen extends StatefulWidget {
   const AddTitikScreen({super.key});
@@ -17,26 +25,85 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _goalController = TextEditingController();
+
+  final _picker = ImagePicker();
+  XFile? _pickedPhoto;
+
   UrgencyLevel _selectedUrgency = UrgencyLevel.urgent;
   double _latitude = -7.7956;
   double _longitude = 110.3695;
 
+  // Category selection (UI labels)
+  String _selectedCategory = 'Food & Water';
+
+  final List<String> _categories = [
+    'Semua',
+    'Food & Water',
+    'Medical',
+    'Education',
+    'Infrastructure',
+    'Clothes',
+    'Other',
+  ];
+
   final _repository = const DonationRepository();
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    final res = await _picker.pickImage(
+      source: source,
+      imageQuality: 85,
+    );
+    if (res == null) return;
+    setState(() => _pickedPhoto = res);
+  }
+
+  Future<String> _photoToDataUrl(XFile file) async {
+    // Backend expects `photo_url`. Without a backend upload service,
+    // we send a data URL as a portable representation.
+    final bytes = await File(file.path).readAsBytes();
+    final base64Str = base64Encode(bytes);
+    final parts = file.name.split('.');
+    final ext = parts.isNotEmpty ? parts.last : 'jpg';
+    final mime = switch (ext.toLowerCase()) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      'jpeg' || 'jpg' => 'image/jpeg',
+      _ => 'image/jpeg',
+    };
+    return 'data:$mime;base64,$base64Str';
+  }
 
   Future<void> _createDonation() async {
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
+
     if (title.isEmpty || description.isEmpty) {
       throw Exception('Title and description are required');
     }
 
-    await _repository.createDonation(
+    if (_pickedPhoto == null) {
+      throw Exception('Photo Evidence is required');
+    }
+
+    // 1) create donation point
+    final created = await _repository.createDonation(
       title: title,
       description: description,
       latitude: _latitude,
       longitude: _longitude,
       urgency: _selectedUrgency,
-      category: 'Umum',
+      category: _mapCategoryToBackend(_selectedCategory),
+      goalAmount: double.tryParse(
+        _goalController.text.trim().replaceAll('.', '').replaceAll(',', ''),
+      ) ?? 0.0,
+    );
+
+    // 2) upload documentation (photo evidence)
+    final dataUrl = await _photoToDataUrl(_pickedPhoto!);
+    await _repository.uploadDocumentation(
+      pointId: created.id,
+      photoUrl: dataUrl,
+      caption: null,
     );
   }
 
@@ -103,6 +170,25 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                       filled: true,
                       fillColor: Colors.white,
                     ),
+                  ),
+                  const SizedBox(height: 14),
+                  // Category
+                  _sectionLabel('Category'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _categories.where((c) => c != 'Semua').map((c) {
+                      final isSelected = _selectedCategory == c;
+                      return ChoiceChip(
+                        label: Text(c),
+                        selected: isSelected,
+                        onSelected: (_) =>
+                            setState(() => _selectedCategory = c),
+                        selectedColor: AppColors.primary.withOpacity(0.12),
+                        backgroundColor: Colors.white,
+                      );
+                    }).toList(),
                   ),
                   const SizedBox(height: 14),
                   // Goals
@@ -191,30 +277,76 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
     );
   }
 
+  String _mapCategoryToBackend(String uiValue) {
+    // Map UI label to backend category value.
+    // Backend currently uses strings like: Pangan, Medis, Pendidikan, Infrastruktur, Pakaian.
+    return switch (uiValue) {
+      'Food & Water' => 'Pangan',
+      'Medical' => 'Medis',
+      'Education' => 'Pendidikan',
+      'Infrastructure' => 'Infrastruktur',
+      'Clothes' => 'Pakaian',
+      'Other' => 'Lainnya',
+      // If someone picks 'Semua', fallback to generic
+      'Semua' => 'Umum',
+      _ => 'Umum',
+    };
+  }
+
   Widget _sectionLabel(String text) {
     return Text(text, style: AppTextStyles.titleSmall);
   }
 
   Widget _photoUploadBox() {
-    return Container(
-      height: 120,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFFEEF2FF),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, style: BorderStyle.solid),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.photo_camera_outlined,
-            size: 32,
-            color: AppColors.textLight,
+    return InkWell(
+      onTap: () => _pickPhoto(ImageSource.gallery),
+      onLongPress: () => _pickPhoto(ImageSource.camera),
+      child: Container(
+        height: 120,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: const Color(0xFFEEF2FF),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.border,
+            style: BorderStyle.solid,
           ),
-          const SizedBox(height: 6),
-          Text('Tap to upload or take a photo', style: AppTextStyles.bodySmall),
-        ],
+        ),
+        child: _pickedPhoto == null
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.photo_camera_outlined,
+                    size: 32,
+                    color: AppColors.textLight,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to upload or take a photo',
+                    style: AppTextStyles.bodySmall,
+                  ),
+                ],
+              )
+            : Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.check_circle_rounded,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Photo selected',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -258,58 +390,161 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
   }
 
   Widget _locationPicker() {
-    return Container(
-      height: 160,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        color: const Color(0xFFC8DFC4),
-      ),
-      child: Stack(
-        children: [
-          // Map background simulation
-          ClipRRect(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          height: 44,
+          decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            child: CustomPaint(painter: _GridMapPainter(), child: Container()),
+            color: Colors.white,
+            border: Border.all(color: AppColors.border),
           ),
-          // Pin
-          const Center(
-            child: Icon(
-              Icons.location_on_rounded,
-              color: AppColors.urgencyHigh,
-              size: 40,
-            ),
-          ),
-          // Pin location button
-          Positioned(
-            bottom: 10,
-            right: 10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 4,
+          child: Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () async {
+                    try {
+                      final pos =
+                          await LocationService.instance.getCurrentPosition();
+                      if (!context.mounted) return;
+                      if (pos == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content:
+                                Text('Aktifkan GPS untuk menentukan lokasi.'),
+                          ),
+                        );
+                        return;
+                      }
+                      setState(() {
+                        _latitude = pos.latitude;
+                        _longitude = pos.longitude;
+                      });
+                    } catch (_) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Gagal mendapatkan lokasi saat ini.'),
+                        ),
+                      );
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.my_location_rounded,
+                            size: 18, color: AppColors.primary),
+                        SizedBox(width: 8),
+                        Text(
+                          '📍 Gunakan Lokasi Saya',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.my_location_rounded,
-                    size: 14,
-                    color: AppColors.textSecondary,
+              Container(width: 1, color: AppColors.divider),
+              Expanded(
+                child: InkWell(
+                  onTap: () async {
+                    final result = await Navigator.push<LatLng>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LocationPickerScreen(
+                          initialPosition: LatLng(_latitude, _longitude),
+                        ),
+                      ),
+                    );
+
+                    if (!context.mounted) return;
+                    if (result == null) return;
+                    setState(() {
+                      _latitude = result.latitude;
+                      _longitude = result.longitude;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(Icons.map_rounded,
+                            size: 18, color: AppColors.primary),
+                        SizedBox(width: 8),
+                        Text(
+                          '🗺 Pilih di Peta',
+                          style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  Text('Pin Location', style: AppTextStyles.labelSmall),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          height: 160,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: const Color(0xFFC8DFC4),
+          ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CustomPaint(
+                  painter: _GridMapPainter(),
+                  child: Container(),
+                ),
+              ),
+              Center(
+                child: Icon(
+                  Icons.location_on_rounded,
+                  color: AppColors.urgencyHigh,
+                  size: 40,
+                ),
+              ),
+              Positioned(
+                bottom: 12,
+                left: 12,
+                right: 12,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Text(
+                    'Koordinat: ${_latitude.toStringAsFixed(5)}, ${_longitude.toStringAsFixed(5)}',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
