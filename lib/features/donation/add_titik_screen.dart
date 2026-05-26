@@ -29,6 +29,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
   final _picker = ImagePicker();
   XFile? _pickedPhoto;
 
+  // Requirement: urgency level tidak ditampilkan saat add titik komunitas,
+  // dan default selalu urgent.
   UrgencyLevel _selectedUrgency = UrgencyLevel.urgent;
   double _latitude = -7.7956;
   double _longitude = 110.3695;
@@ -94,8 +96,9 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
       urgency: _selectedUrgency,
       category: _mapCategoryToBackend(_selectedCategory),
       goalAmount: double.tryParse(
-        _goalController.text.trim().replaceAll('.', '').replaceAll(',', ''),
-      ) ?? 0.0,
+            _goalController.text.trim().replaceAll('.', '').replaceAll(',', ''),
+          ) ??
+          0.0,
     );
 
     // 2) upload documentation (photo evidence)
@@ -217,30 +220,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  // Urgency Level
-                  _sectionLabel('Urgency Level'),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      _urgencyOption(
-                        UrgencyLevel.low,
-                        'Low',
-                        AppColors.urgencyLow,
-                      ),
-                      const SizedBox(width: 10),
-                      _urgencyOption(
-                        UrgencyLevel.normal,
-                        'Normal',
-                        AppColors.urgencyMedium,
-                      ),
-                      const SizedBox(width: 10),
-                      _urgencyOption(
-                        UrgencyLevel.urgent,
-                        'Urgent',
-                        AppColors.urgencyHigh,
-                      ),
-                    ],
-                  ),
+                  // Urgency level tidak ditampilkan (default urgent)
                   const SizedBox(height: 18),
                   // Location
                   _sectionLabel('Location'),

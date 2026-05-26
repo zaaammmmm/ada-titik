@@ -123,7 +123,11 @@ class CommunityRepository {
 
     final data = res.data?['data'];
     if (data is! Map<String, dynamic>) {
-      throw StateError('Response format tidak sesuai');
+      // Beberapa backend mengirim response lain saat error upload gambar.
+      // Hindari cast Map yang menyebabkan error tipe.
+      final message =
+          res.data?['message']?.toString() ?? res.data?['error']?.toString();
+      throw Exception(message ?? 'Response format tidak sesuai');
     }
     return _mapPost(data);
   }

@@ -138,6 +138,27 @@ class DonationRepository {
     return data.whereType<Map<String, dynamic>>().map(_mapActivity).toList();
   }
 
+  /// Donasi Saya khusus untuk role donatur.
+  /// Ambil activity dan filter type yang sesuai dokumentasi backend: `rating_given`.
+  Future<List<ActivityItem>> getDonationsAsDonatur({
+    int limit = 10,
+  }) async {
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/users/activity',
+      query: {'page': 1, 'limit': limit},
+    );
+
+    final body = res.data;
+    final data = (body?['data'] as List?) ?? [];
+
+    final items = data.whereType<Map<String, dynamic>>();
+    final filtered = items.where(
+      (e) => (e['type']?.toString() ?? '').toLowerCase() == 'rating_given',
+    );
+
+    return filtered.map(_mapActivity).toList();
+  }
+
   /// GET /api/users/activity (untuk komunitas): type=donation_managed
   /// Shape v3: { id, title, subtitle, type, created_at, status, urgency, category }
   /// Kita tampilkan sebagai list DonationRequest (karena FE butuh data titik).

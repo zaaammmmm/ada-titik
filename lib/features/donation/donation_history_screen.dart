@@ -17,14 +17,12 @@ class DonationHistoryScreen extends StatefulWidget {
 class _DonationHistoryScreenState extends State<DonationHistoryScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-  late final Future<List<ActivityItem>> _activityFuture;
-  final DonationRepository _repo = DonationRepository();
+  late final DonationRepository _repo = DonationRepository();
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _activityFuture = _repo.getUserActivity(limit: 10);
   }
 
   @override
@@ -86,7 +84,7 @@ class _DonationHistoryScreenState extends State<DonationHistoryScreen>
 
   Widget _buildDonationsTab() {
     return FutureBuilder<List<ActivityItem>>(
-      future: _activityFuture,
+      future: _repo.getDonationsAsDonatur(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());

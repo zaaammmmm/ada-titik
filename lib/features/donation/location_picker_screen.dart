@@ -51,7 +51,10 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.ada_titik',
+                // Selaraskan identity app
+                userAgentPackageName: 'com.adatitik.app',
+                minZoom: 3,
+                maxZoom: 17,
               ),
               MarkerLayer(
                 markers: [

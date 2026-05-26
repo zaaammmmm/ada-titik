@@ -4,7 +4,7 @@ import 'dart:async';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../features/donation/data/donation_repository.dart';
-import '../../features/community/data/community_repository.dart'; // ✅ import baru
+import '../../features/community/data/community_repository.dart';
 import '../../features/community/community_write_screen.dart';
 import '../../features/community/comments_screen.dart';
 
@@ -20,7 +20,10 @@ class CommunityScreen extends StatefulWidget {
 }
 
 class _CommunityScreenState extends State<CommunityScreen>
-    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+    with
+        SingleTickerProviderStateMixin,
+        AutomaticKeepAliveClientMixin,
+        WidgetsBindingObserver {
   @override
   bool get wantKeepAlive => true;
 
@@ -91,50 +94,34 @@ class _CommunityScreenState extends State<CommunityScreen>
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.background,
-        title: Text(
-          'Community Aid',
-          style: AppTextStyles.headlineSmall.copyWith(color: AppColors.primary),
-        ),
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: CircleAvatar(
-            radius: 18,
-            backgroundColor: AppColors.primaryContainer,
-            child: Icon(
-              Icons.people_rounded,
-              color: AppColors.primary,
-              size: 20,
+      appBar: AdaTitikAppBar(
+        title: 'Komunitas',
+        onNotification: () {},
+      ),
+      body: Column(
+        children: [
+          TabBar(
+            controller: _tabController,
+            tabs: _tabs.map((t) => Tab(text: t)).toList(),
+            labelStyle: AppTextStyles.labelLarge,
+            unselectedLabelStyle: AppTextStyles.labelLarge.copyWith(
+              color: AppColors.textSecondary,
+            ),
+            labelColor: AppColors.primary,
+            unselectedLabelColor: AppColors.textSecondary,
+            indicatorColor: AppColors.primary,
+            indicatorWeight: 2.5,
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildFeed(_terbaruFuture),
+                _buildFeed(_populerFuture),
+                _buildFeed(_diskusiFuture),
+              ],
             ),
           ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.notifications_outlined),
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: _tabs.map((t) => Tab(text: t)).toList(),
-          labelStyle: AppTextStyles.labelLarge,
-          unselectedLabelStyle: AppTextStyles.labelLarge.copyWith(
-            color: AppColors.textSecondary,
-          ),
-          labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.textSecondary,
-          indicatorColor: AppColors.primary,
-          indicatorWeight: 2.5,
-        ),
-      ),
-      // ✅ FIXED: setiap tab punya future sendiri dengan parameter tab berbeda
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildFeed(_terbaruFuture),
-          _buildFeed(_populerFuture),
-          _buildFeed(_diskusiFuture),
         ],
       ),
       floatingActionButton: _RoleFab(
@@ -277,19 +264,58 @@ class _FeedCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(post.authorName, style: AppTextStyles.titleSmall),
-                    Text(post.authorRole, style: AppTextStyles.bodySmall),
+                    Text(
+                      post.authorName,
+                      style: AppTextStyles.titleSmall,
+                    ),
+                    Text(
+                      post.authorRole,
+                      style: AppTextStyles.bodySmall,
+                    ),
                   ],
                 ),
               ),
               if (post.tagLabel != null) _feedTag(post.type),
-              const SizedBox(width: 4),
-              Text(
-                post.timeAgo,
-                style: AppTextStyles.bodySmall.copyWith(fontSize: 10),
+              PopupMenuButton<int>(
+                tooltip: 'Opsi posting',
+                onSelected: (value) async {
+                  if (value == 1) {
+                    await showDialog<bool>(
+                      context: context,
+                      builder: (context) {
+                        return ReportDialog(
+                          title: 'Laporkan Posting',
+                          pointId: post.id,
+                          defaultReason: null,
+                          onSubmit: ({
+                            required pointId,
+                            required reason,
+                          }) async {
+                            await const CommunityRepository().reportPost(
+                              postId: pointId,
+                              reason: reason,
+                            );
+                          },
+                        );
+                      },
+                    );
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem<int>(
+                    value: 1,
+                    child: Text('Laporkan'),
+                  ),
+                ],
+                icon: Icon(
+                  Icons.more_horiz_rounded,
+                  size: 20,
+                  color: AppColors.textSecondary,
+                ),
               ),
             ],
           ),
+
           const SizedBox(height: 12),
           // Content
           Text(
@@ -320,11 +346,13 @@ class _FeedCard extends StatelessWidget {
               ),
             ),
           ],
+
           const SizedBox(height: 12),
+
           // Action row
           Row(
             children: [
-              // ✅ FIXED: like button terhubung ke API via onLike callback
+              // Like button
               GestureDetector(
                 onTap: onLike,
                 child: Row(
@@ -339,12 +367,17 @@ class _FeedCard extends StatelessWidget {
                           : AppColors.textSecondary,
                     ),
                     const SizedBox(width: 4),
-                    Text('${post.likes}', style: AppTextStyles.bodySmall),
+                    Text(
+                      '${post.likes}',
+                      style: AppTextStyles.bodySmall,
+                    ),
                   ],
                 ),
               ),
+
               const SizedBox(width: 16),
-              // Komentar — navigasi ke comment screen
+
+              // Comment button
               GestureDetector(
                 onTap: () {
                   Navigator.push(
@@ -362,41 +395,21 @@ class _FeedCard extends StatelessWidget {
                       color: AppColors.textSecondary,
                     ),
                     const SizedBox(width: 4),
-                    Text('${post.comments}', style: AppTextStyles.bodySmall),
+                    Text(
+                      '${post.comments}',
+                      style: AppTextStyles.bodySmall,
+                    ),
                   ],
                 ),
               ),
+
               const Spacer(),
-              PopupMenuButton<int>(
-                tooltip: 'Opsi posting',
-                onSelected: (value) async {
-                  if (value == 1) {
-                    await showDialog<bool>(
-                      context: context,
-                      builder: (context) {
-                        return ReportDialog(
-                          title: 'Laporkan Posting',
-                          pointId: post.id,
-                          defaultReason: null,
-                          onSubmit: (
-                              {required pointId, required reason}) async {
-                            await const CommunityRepository()
-                                .reportPost(postId: pointId, reason: reason);
-                          },
-                        );
-                      },
-                    );
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem<int>(
-                    value: 1,
-                    child: Text('Laporkan'),
-                  ),
-                ],
-                icon: Icon(
-                  Icons.more_horiz_rounded,
-                  size: 20,
+
+              // Time
+              Text(
+                post.timeAgo,
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontSize: 10,
                   color: AppColors.textSecondary,
                 ),
               ),

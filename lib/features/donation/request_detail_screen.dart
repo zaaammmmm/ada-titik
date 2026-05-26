@@ -451,6 +451,10 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           children: [
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              // Batasi pemakaian agar tidak terlalu banyak request tile
+              userAgentPackageName: 'com.adatitik.app',
+              minZoom: 3,
+              maxZoom: 17,
             ),
             MarkerLayer(
               markers: [
@@ -705,7 +709,12 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           ),
         ),
 
-        // Tombol Berangkat untuk donatur (Open -> On Progress)
+        // Requirement baru:
+        // - Donatur menekan 'Berangkat' hanya memberikan sinyal ke komunitas.
+        // - Komunitas menekan 'Accept & Selesai' untuk menerima donatur & menandai donasi selesai.
+        // Catatan: FE hanya dapat memanggil endpoint yang ada.
+
+        // Tombol Berangkat untuk donatur
         if (isDonatur && isOpen) ...[
           const SizedBox(height: 10),
           SizedBox(
@@ -722,7 +731,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           ),
         ],
 
-        // Tombol Tandai Selesai untuk komunitas (On Progress -> Completed)
+        // Tombol Accept & selesai untuk komunitas
         if (isOwner && request.status == RequestStatus.onProgress) ...[
           const SizedBox(height: 10),
           SizedBox(
@@ -730,7 +739,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             child: OutlinedButton.icon(
               onPressed: () => _updateStatus(RequestStatus.completed),
               icon: const Icon(Icons.check_circle_rounded, size: 18),
-              label: const Text('Tandai Selesai'),
+              label: const Text('Accept & Selesai'),
             ),
           ),
         ],

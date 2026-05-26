@@ -37,6 +37,7 @@ class ProfileScreen extends ConsumerWidget {
           return Scaffold(
             backgroundColor: AppColors.background,
             appBar: AdaTitikAppBar(
+              title: 'Profil',
               onNotification: () => context.push('/home/notification'),
             ),
             body: Center(
@@ -56,6 +57,7 @@ class ProfileScreen extends ConsumerWidget {
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AdaTitikAppBar(
+            title: 'Profil',
             onNotification: () => context.push('/home/notification'),
           ),
           body: _ProfileContent(
@@ -215,7 +217,22 @@ class _ProfileContent extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () => _openEditProfileDialog(context, user: user),
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AccountSettingsScreen(user: user),
+                  ),
+                );
+
+                if (result == true && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Profil berhasil diperbarui'),
+                    ),
+                  );
+                }
+              },
               icon: const Icon(Icons.edit_outlined, size: 16),
               label: const Text('Edit Profile'),
               style: ElevatedButton.styleFrom(
@@ -368,7 +385,7 @@ class _ProfileContent extends StatelessWidget {
   Widget _buildRecentActivity() {
     final repo = DonationRepository();
     return FutureBuilder<List<ActivityItem>>(
-      future: repo.getUserActivity(limit: 5),
+      future: repo.getUserActivity(limit: 2),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(

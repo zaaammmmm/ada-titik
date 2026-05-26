@@ -9,8 +9,12 @@ import '../../shared/widgets/app_widgets.dart';
 import '../donation/active_requests_screen.dart';
 import '../donation/request_detail_screen.dart';
 import '../donation/data/donation_repository.dart';
+import '../news/news_screen.dart';
+import '../news/data/news_repository.dart';
+
 import '../notification/notification_screen.dart';
 import '../search/search_screen.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -29,9 +33,6 @@ class _HomeScreenState extends State<HomeScreen>
   late Future<List<ActivityItem>> _activityFuture;
   Timer? _autoRefreshTimer;
   bool _appInForeground = true;
-  // ✨ TODO I: Artikel donasi — di-cache 30 menit
-  static List<_ArticleItem>? _cachedArticles;
-  static DateTime? _articlesCachedAt;
 
   @override
   void initState() {
@@ -107,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen>
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AdaTitikAppBar(
+            title: 'Beranda',
             onNotification: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -197,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen>
           child: _StatsCard(
             icon: Icons.favorite_rounded,
             number: user.donationCount.toString(),
-            label: 'DONATIONS SENT',
+            label: 'ACTIVITY COUNT',
             color: AppColors.statsTeal,
             textColor: Colors.white,
           ),
@@ -456,60 +458,39 @@ class _HomeScreenState extends State<HomeScreen>
     };
   }
 
-  // ✨ TODO I: Artikel Donasi — menggunakan sumber Wikipedia & konten publik
-  static final List<_ArticleItem> _articles = [
-    _ArticleItem(
-      title: 'Mengenal Donasi Pangan: Cara Mudah Bantu Sesama',
-      subtitle:
-          'Donasi pangan adalah salah satu bentuk bantuan paling langsung...',
-      url: 'https://id.wikipedia.org/wiki/Donasi',
-      icon: Icons.restaurant_outlined,
-    ),
-    _ArticleItem(
-      title: 'Cara Berdonasi yang Aman dan Transparan',
-      subtitle: 'Pastikan donasi Anda sampai ke tangan yang tepat...',
-      url: 'https://id.wikipedia.org/wiki/Filantropi',
-      icon: Icons.verified_outlined,
-    ),
-    _ArticleItem(
-      title: 'Dampak Positif Donasi Bagi Komunitas',
-      subtitle: 'Setiap donasi sekecil apapun memiliki efek berlipat ganda...',
-      url: 'https://id.wikipedia.org/wiki/Tanggung_jawab_sosial',
-      icon: Icons.people_outline_rounded,
-    ),
-    _ArticleItem(
-      title: 'Distribusi Bantuan: Dari Donatur ke Penerima',
-      subtitle:
-          'Proses penyaluran bantuan yang efektif memerlukan koordinasi...',
-      url: 'https://id.wikipedia.org/wiki/Distribusi',
-      icon: Icons.local_shipping_outlined,
-    ),
-  ];
-
   Widget _buildArticlesSection() {
+    // Ambil dari repository berita (statik open-source links)
+    final all = const NewsRepository().getAll();
+    final show = all.take(6).toList(growable: false);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
-          title: 'Artikel Donasi',
+          title: 'Berita',
           actionLabel: 'Lihat Semua',
-          onAction: () async {
-            final uri = Uri.parse('https://id.wikipedia.org/wiki/Donasi');
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-            }
-          },
+          onAction: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NewsScreen()),
+          ),
         ),
         const SizedBox(height: 12),
         SizedBox(
           height: 130,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: _articles.length,
+            itemCount: show.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, i) {
-              final article = _articles[i];
-              return _ArticleCard(article: article);
+              final article = show[i];
+              return _ArticleCard(
+                article: _ArticleItem(
+                  title: article.title,
+                  subtitle: article.subtitle,
+                  url: article.url,
+                  icon: article.icon,
+                ),
+              );
             },
           ),
         ),
@@ -694,7 +675,6 @@ class _UrgentCard extends StatelessWidget {
   }
 }
 
-// ✨ TODO I: Model & Widget Artikel
 class _ArticleItem {
   final String title;
   final String subtitle;

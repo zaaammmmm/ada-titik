@@ -89,6 +89,7 @@ class _MapsScreenState extends State<MapsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AdaTitikAppBar(
+        title: 'Maps',
         onNotification: () {
           Navigator.push(
             context,
@@ -139,7 +140,10 @@ class _MapsScreenState extends State<MapsScreen> {
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.adatitik.app',
-                keepBuffer: 5,
+                // Batasi pemakaian agar tidak terlalu banyak request tile
+                minZoom: 3,
+                maxZoom: 17,
+                keepBuffer: 3,
               ),
               if (_userPosition != null)
                 MarkerLayer(

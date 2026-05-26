@@ -1,8 +1,11 @@
 // lib/shared/widgets/app_widgets.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/models.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/providers/auth_provider.dart';
 
 // ─── App Logo Widget ──────────────────────────────────────────────────────────
 class AppLogo extends StatelessWidget {
@@ -47,20 +50,20 @@ class UrgencyBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, bg, fg) = switch (urgency) {
       UrgencyLevel.urgent => (
-        '! High Urgency',
-        AppColors.urgencyHighLight,
-        AppColors.urgencyHigh,
-      ),
+          '! High Urgency',
+          AppColors.urgencyHighLight,
+          AppColors.urgencyHigh,
+        ),
       UrgencyLevel.normal => (
-        '! Normal',
-        AppColors.urgencyMediumLight,
-        AppColors.urgencyMedium,
-      ),
+          '! Normal',
+          AppColors.urgencyMediumLight,
+          AppColors.urgencyMedium,
+        ),
       UrgencyLevel.low => (
-        'Low',
-        AppColors.urgencyLowLight,
-        AppColors.urgencyLow,
-      ),
+          'Low',
+          AppColors.urgencyLowLight,
+          AppColors.urgencyLow,
+        ),
     };
     return Container(
       padding: EdgeInsets.symmetric(
@@ -91,23 +94,23 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, bg, fg, icon) = switch (status) {
       RequestStatus.open => (
-        'Open Request',
-        AppColors.statusOpenLight,
-        AppColors.statusOpen,
-        Icons.radio_button_on_rounded,
-      ),
+          'Open Request',
+          AppColors.statusOpenLight,
+          AppColors.statusOpen,
+          Icons.radio_button_on_rounded,
+        ),
       RequestStatus.onProgress => (
-        'In Progress',
-        AppColors.statusProgressLight,
-        AppColors.statusProgress,
-        Icons.sync_rounded,
-      ),
+          'In Progress',
+          AppColors.statusProgressLight,
+          AppColors.statusProgress,
+          Icons.sync_rounded,
+        ),
       RequestStatus.completed => (
-        'Completed',
-        AppColors.statusCompletedLight,
-        AppColors.statusCompleted,
-        Icons.check_circle_rounded,
-      ),
+          'Completed',
+          AppColors.statusCompletedLight,
+          AppColors.statusCompleted,
+          Icons.check_circle_rounded,
+        ),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -268,10 +271,13 @@ class UserAvatar extends StatelessWidget {
 // ─── App Bar Brand ────────────────────────────────────────────────────────────
 class AdaTitikAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showAvatar;
+  final String title;
   final VoidCallback? onNotification;
+
   const AdaTitikAppBar({
     super.key,
     this.showAvatar = true,
+    this.title = 'Ada Titik?',
     this.onNotification,
   });
 
@@ -280,21 +286,18 @@ class AdaTitikAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    // NOTE: avatar user login diambil dari AuthProvider melalui wrapper widget
     return AppBar(
       backgroundColor: AppColors.background,
       elevation: 0,
       leading: showAvatar
           ? Padding(
               padding: const EdgeInsets.only(left: 16),
-              child: UserAvatar(
-                avatarUrl: 'https://i.pravatar.cc/150?img=12',
-                name: 'Budi',
-                size: 36,
-              ),
+              child: _AuthUserAvatar(size: 36),
             )
           : null,
       title: Text(
-        'Ada Titik?',
+        title,
         style: AppTextStyles.brandTitle.copyWith(fontSize: 20),
       ),
       actions: [
@@ -323,6 +326,30 @@ class AdaTitikAppBar extends StatelessWidget implements PreferredSizeWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AuthUserAvatar extends ConsumerWidget {
+  final double size;
+  const _AuthUserAvatar({required this.size});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authProvider).user;
+
+    if (user == null) {
+      return UserAvatar(
+        avatarUrl: null,
+        name: '',
+        size: size,
+      );
+    }
+
+    return UserAvatar(
+      avatarUrl: user.avatarUrl,
+      name: user.name,
+      size: size,
     );
   }
 }

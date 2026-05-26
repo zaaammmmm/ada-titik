@@ -97,7 +97,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 _buildLogo(),
                 const SizedBox(height: 24),
                 Text(
-                  'Ada Titik?',
+                  'Ada Titik',
                   style: AppTextStyles.brandTitle.copyWith(fontSize: 32),
                 ),
                 const SizedBox(height: 200),
