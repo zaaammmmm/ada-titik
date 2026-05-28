@@ -1,3 +1,4 @@
+// lib/features/chat/conversations_list_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,11 +23,20 @@ class _ConversationsListScreenState
   bool _loading = true;
   String? _error;
   List<ChatConversationDto> _convs = const [];
+  String _searchQuery = '';
+  bool _showSearch = false;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -51,197 +61,525 @@ class _ConversationsListScreenState
     }
   }
 
+  List<ChatConversationDto> get _filtered {
+    if (_searchQuery.isEmpty) return _convs;
+    final q = _searchQuery.toLowerCase();
+    return _convs.where((c) {
+      return c.otherUserName.toLowerCase().contains(q) ||
+          c.lastMessageBody.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  int get _unreadCount => _convs.where((c) => c.unread).length;
+
+  String _formatRelativeTime(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'Baru saja';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m lalu';
+    if (diff.inHours < 24) return '${diff.inHours}j lalu';
+    if (diff.inDays == 1) return 'Kemarin';
+    if (diff.inDays < 7) return '${diff.inDays}h lalu';
+    final months = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'Mei',
+      'Jun',
+      'Jul',
+      'Agu',
+      'Sep',
+      'Okt',
+      'Nov',
+      'Des'
+    ];
+    return '${dt.day} ${months[dt.month]}';
+  }
+
+  void _openChat(ChatConversationDto c) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          targetUserId: c.otherUserId,
+          contextType: c.contextType,
+          contextId: c.contextId,
+          otherUserName: c.otherUserName,
+          otherUserAvatar: c.otherUserAvatar,
+        ),
+      ),
+    ).then((_) => _load()); // refresh after returning
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AdaTitikAppBar(
-        showAvatar: false,
-        title: 'Chat',
-        onNotification: null,
-      ),
+      appBar: _showSearch
+          ? _SearchAppBar(
+              controller: _searchController,
+              onChanged: (q) => setState(() => _searchQuery = q),
+              onClose: () => setState(() {
+                _showSearch = false;
+                _searchQuery = '';
+                _searchController.clear();
+              }),
+            ) as PreferredSizeWidget
+          : _ConvsAppBar(
+              unreadCount: _unreadCount,
+              onSearch: () => setState(() => _showSearch = true),
+              onRefresh: _load,
+            ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary))
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Gagal memuat percakapan',
-                          style: AppTextStyles.titleSmall,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _error!,
-                          style: AppTextStyles.bodySmall
-                              .copyWith(color: AppColors.textSecondary),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: _load,
-                          child: const Text('Coba lagi'),
-                        )
-                      ],
-                    ),
-                  ),
-                )
-              : _convs.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.chat_bubble_outline_rounded,
-                                size: 44, color: AppColors.textSecondary),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Belum ada percakapan. Mulai chat dari halaman titik bantuan / detail.',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 12),
-                        itemCount: _convs.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 10),
-                        itemBuilder: (context, index) {
-                          final c = _convs[index];
-                          return GestureDetector(
-                            onTap: () {
-                              // Masuk ke thread chat dengan men-trigger startConversation
-                              // sesuai target dan context dari backend.
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    targetUserId: c.otherUserId,
-                                    contextType: c.contextType,
-                                    contextId: c.contextId,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: AppColors.border),
-                              ),
-                              child: Row(
-                                children: [
-                                  _ChatUserAvatar(
-                                    avatarUrl: c.otherUserAvatar,
-                                    name: c.otherUserName,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                c.otherUserName,
-                                                style: AppTextStyles.titleSmall,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            if (c.unread)
-                                              Container(
-                                                width: 10,
-                                                height: 10,
-                                                decoration: const BoxDecoration(
-                                                  color: AppColors.urgencyHigh,
-                                                  shape: BoxShape.circle,
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          c.lastMessageBody,
-                                          style:
-                                              AppTextStyles.bodySmall.copyWith(
-                                            color: AppColors.textSecondary,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+              ? _ErrorView(error: _error!, onRetry: _load)
+              : RefreshIndicator(
+                  color: AppColors.primary,
+                  onRefresh: _load,
+                  child: _buildList(),
+                ),
+    );
+  }
+
+  Widget _buildList() {
+    final items = _filtered;
+    if (items.isEmpty) {
+      return _searchQuery.isNotEmpty
+          ? _NoResultsView(query: _searchQuery)
+          : _EmptyConvsView();
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: items.length,
+      separatorBuilder: (_, __) => const Divider(
+        height: 1,
+        indent: 76,
+        color: AppColors.divider,
+      ),
+      itemBuilder: (context, index) {
+        final c = items[index];
+        return _ConversationTile(
+          conv: c,
+          relativeTime: _formatRelativeTime(c.lastActivityAt),
+          onTap: () => _openChat(c),
+        );
+      },
     );
   }
 }
 
-class _ChatUserAvatar extends StatelessWidget {
-  final String? avatarUrl;
-  final String name;
+// ─── App Bars ─────────────────────────────────────────────────────────────────
 
-  const _ChatUserAvatar({
-    required this.avatarUrl,
-    required this.name,
+class _ConvsAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final int unreadCount;
+  final VoidCallback onSearch;
+  final VoidCallback onRefresh;
+
+  const _ConvsAppBar({
+    required this.unreadCount,
+    required this.onSearch,
+    required this.onRefresh,
+  });
+
+  @override
+  Size get preferredSize => const Size.fromHeight(60);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: AppColors.background,
+      elevation: 0,
+      title: Row(
+        children: [
+          Text(
+            'Pesan',
+            style: AppTextStyles.brandTitle.copyWith(fontSize: 20),
+          ),
+          if (unreadCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.urgencyHigh,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$unreadCount',
+                style: AppTextStyles.labelSmall.copyWith(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.search_rounded, color: AppColors.textPrimary),
+          onPressed: onSearch,
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh_rounded, color: AppColors.textPrimary),
+          onPressed: onRefresh,
+        ),
+      ],
+    );
+  }
+}
+
+class _SearchAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClose;
+
+  const _SearchAppBar({
+    required this.controller,
+    required this.onChanged,
+    required this.onClose,
+  });
+
+  @override
+  Size get preferredSize => const Size.fromHeight(60);
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBar(
+      backgroundColor: AppColors.background,
+      elevation: 0,
+      leading: IconButton(
+        icon:
+            const Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+        onPressed: onClose,
+      ),
+      title: TextField(
+        controller: controller,
+        autofocus: true,
+        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textPrimary),
+        cursorColor: AppColors.primary,
+        decoration: InputDecoration(
+          hintText: 'Cari percakapan...',
+          hintStyle: AppTextStyles.bodyMedium.copyWith(
+            color: AppColors.textLight,
+          ),
+          border: InputBorder.none,
+        ),
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+// ─── Conversation Tile ────────────────────────────────────────────────────────
+
+class _ConversationTile extends StatelessWidget {
+  final ChatConversationDto conv;
+  final String relativeTime;
+  final VoidCallback onTap;
+
+  const _ConversationTile({
+    required this.conv,
+    required this.relativeTime,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return CircleAvatar(
-      radius: 18,
-      backgroundColor: AppColors.primaryContainer,
-      child: avatarUrl != null && avatarUrl!.trim().isNotEmpty
-          ? ClipOval(
-              child: Image.network(
-                avatarUrl!,
-                width: 36,
-                height: 36,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) {
-                  return _InitialAvatar(name: name);
-                },
+    final initial = conv.otherUserName.isNotEmpty
+        ? conv.otherUserName[0].toUpperCase()
+        : '?';
+
+    return Material(
+      color: conv.unread
+          ? AppColors.primaryContainer.withOpacity(0.4)
+          : Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              // Avatar with online indicator
+              Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: AppColors.primaryContainer,
+                    child: conv.otherUserAvatar.isNotEmpty
+                        ? ClipOval(
+                            child: Image.network(
+                              conv.otherUserAvatar,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Text(
+                                initial,
+                                style: AppTextStyles.headlineSmall.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          )
+                        : Text(
+                            initial,
+                            style: AppTextStyles.headlineSmall.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ],
               ),
-            )
-          : _InitialAvatar(name: name),
+              const SizedBox(width: 14),
+
+              // Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            conv.otherUserName,
+                            style: AppTextStyles.titleSmall.copyWith(
+                              fontWeight: conv.unread
+                                  ? FontWeight.w700
+                                  : FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          relativeTime,
+                          style: AppTextStyles.labelSmall.copyWith(
+                            color: conv.unread
+                                ? AppColors.primary
+                                : AppColors.textLight,
+                            fontSize: 11,
+                            fontWeight:
+                                conv.unread ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            conv.lastMessageBody.isEmpty
+                                ? 'Belum ada pesan'
+                                : conv.lastMessageBody,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: conv.unread
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                              fontWeight: conv.unread
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (conv.unread) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Context type badge
+                    _ContextBadge(contextType: conv.contextType),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _InitialAvatar extends StatelessWidget {
-  final String name;
+// ─── Context Badge ───────────────────────────────────────────────────────────
 
-  const _InitialAvatar({required this.name});
+class _ContextBadge extends StatelessWidget {
+  final String contextType;
+  const _ContextBadge({required this.contextType});
 
   @override
   Widget build(BuildContext context) {
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    return Text(
-      initial,
-      style: AppTextStyles.titleMedium.copyWith(
-        color: AppColors.primary,
-        fontWeight: FontWeight.w700,
+    Color bg;
+    Color fg;
+    String label;
+    IconData icon;
+
+    switch (contextType.toLowerCase()) {
+      case 'post':
+        bg = AppColors.statusOpenLight;
+        fg = AppColors.statusOpen;
+        label = 'Postingan';
+        icon = Icons.article_rounded;
+        break;
+      case 'donation':
+        bg = AppColors.urgencyLowLight;
+        fg = AppColors.urgencyLow;
+        label = 'Donasi';
+        icon = Icons.volunteer_activism_rounded;
+        break;
+      default:
+        bg = AppColors.surfaceVariant;
+        fg = AppColors.textSecondary;
+        label = contextType;
+        icon = Icons.chat_bubble_outline_rounded;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 10, color: fg),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: fg,
+            fontSize: 10,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Empty & Error Views ─────────────────────────────────────────────────────
+
+class _EmptyConvsView extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 36,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Belum ada percakapan',
+                  style: AppTextStyles.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Mulai chat dari halaman titik bantuan\natau detail postingan',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NoResultsView extends StatelessWidget {
+  final String query;
+  const _NoResultsView({required this.query});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_off_rounded,
+                size: 48, color: AppColors.textSecondary),
+            const SizedBox(height: 12),
+            Text('Tidak ditemukan', style: AppTextStyles.titleSmall),
+            const SizedBox(height: 6),
+            Text(
+              'Tidak ada percakapan dengan kata kunci "$query"',
+              style: AppTextStyles.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorView extends StatelessWidget {
+  final String error;
+  final VoidCallback onRetry;
+
+  const _ErrorView({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_rounded,
+                size: 52, color: AppColors.textSecondary),
+            const SizedBox(height: 16),
+            Text('Gagal memuat percakapan', style: AppTextStyles.titleSmall),
+            const SizedBox(height: 8),
+            Text(error,
+                style: AppTextStyles.bodySmall, textAlign: TextAlign.center),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Coba lagi'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
