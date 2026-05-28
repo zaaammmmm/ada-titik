@@ -90,6 +90,7 @@ class _MapsScreenState extends State<MapsScreen> {
       backgroundColor: AppColors.background,
       appBar: AdaTitikAppBar(
         title: 'Maps',
+        showAvatar: false,
         onNotification: () {
           Navigator.push(
             context,

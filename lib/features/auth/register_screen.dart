@@ -107,8 +107,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   (e.response?.data as Map)['error'])
               ?.toString()
           : null;
-      setState(() => _inlineError = serverMsg ??
-          'Register gagal${status != null ? ' ($status)' : ''}.');
+      setState(() => _inlineError =
+          serverMsg ?? 'Register gagal${status != null ? ' ($status)' : ''}.');
     } catch (_) {
       setState(
           () => _inlineError = 'Register gagal. Periksa koneksi/URL backend.');
@@ -139,7 +139,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Text('Create Account', style: AppTextStyles.headlineLarge),
                   const SizedBox(height: 6),
                   Text(
-                    'Join the Ada Titik? community to start\nmaking an impact.',
+                    'Join the Ada Titik community to start\nmaking an impact.',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: AppColors.textSecondary,
                     ),

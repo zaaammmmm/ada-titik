@@ -214,7 +214,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Column(
                     children: [
                       Text(
-                        'ADA TITIK?',
+                        'ADA TITIK',
                         style: AppTextStyles.titleSmall.copyWith(
                           color: Colors.white,
                           fontSize: 12,

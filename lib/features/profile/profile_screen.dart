@@ -199,7 +199,7 @@ class _ProfileContent extends StatelessWidget {
               Icon(Icons.verified, color: AppColors.primary, size: 16),
               const SizedBox(width: 4),
               Text(
-                user.isVerified ? 'Verified Member' : 'Member',
+                '${user.isVerified ? 'Verified ' : ''}${user.role.toLowerCase() == 'komunitas' ? 'Komunitas' : 'Donatur'}',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w600,

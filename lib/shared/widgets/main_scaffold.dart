@@ -4,7 +4,9 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/community/community_screen.dart';
-import '../../features/maps/maps_screen.dart';
+import '../../features/chat/conversations_list_screen.dart';
+import '../../features/chat/data/chat_repository.dart';
+import '../../features/community/data/community_repository.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/donation/add_titik_screen.dart';
 import '../../features/donation/data/donation_repository.dart';
@@ -21,10 +23,61 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   late int _currentIndex;
 
+  bool _hasUnreadChat = false;
+  bool _hasUnreadCommunity = false;
+
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    _refreshUnreadIndicators();
+  }
+
+  Future<void> _refreshUnreadIndicators() async {
+    try {
+      final chatRepo = const ChatRepository();
+      final communityRepo = const CommunityRepository();
+
+      final convs = await chatRepo.listConversations(page: 1, limit: 50);
+      if (!mounted) return;
+      final hasUnreadChat = convs.any((c) => c.unread);
+
+      // Community indicator (baseline by timestamp/id order):
+      // We'll consider it "new" if we can find posts newer than the previously cached first post.
+      // If cache is empty (first run), we don't show dot.
+      final posts =
+          await communityRepo.getPosts(tab: 'terbaru', page: 1, limit: 10);
+      if (!mounted) return;
+      final hasUnreadCommunity = _isCommunityFeedNew(posts);
+
+      setState(() {
+        _hasUnreadChat = hasUnreadChat;
+        _hasUnreadCommunity = hasUnreadCommunity;
+      });
+    } catch (_) {
+      // If API fails, keep dots off.
+      if (!mounted) return;
+      setState(() {
+        _hasUnreadChat = false;
+        _hasUnreadCommunity = false;
+      });
+    }
+  }
+
+  String? _communityBaselineFirstId;
+  bool _isCommunityFeedNew(List<FeedPost> posts) {
+    if (posts.isEmpty) return false;
+    final firstId = posts.first.id;
+    final baseline = _communityBaselineFirstId;
+
+    if (baseline == null) {
+      _communityBaselineFirstId = firstId;
+      return false;
+    }
+
+    final isNew = firstId != baseline;
+    if (isNew) _communityBaselineFirstId = firstId;
+    return isNew;
   }
 
   void _onItemTapped(int index) {
@@ -107,7 +160,7 @@ class _MainScaffoldState extends State<MainScaffold> {
         _cachedScreens[displayIndex] = switch (displayIndex) {
           0 => const HomeScreen(),
           1 => const CommunityScreen(),
-          2 => const MapsScreen(),
+          2 => const ConversationsListScreen(),
           3 => const ProfileScreen(),
           _ => const SizedBox.shrink(),
         };
@@ -149,9 +202,10 @@ class _MainScaffoldState extends State<MainScaffold> {
                 Icons.people_rounded,
                 Icons.people_outline_rounded,
                 'Community',
+                showDot: _hasUnreadCommunity,
               ),
               _buildFABItem(),
-              _buildNavItem(3, Icons.map_rounded, Icons.map_outlined, 'Maps'),
+              _buildNavItem(3, Icons.chat_rounded, Icons.chat_outlined, 'Chat'),
               _buildNavItem(
                 4,
                 Icons.person_rounded,
@@ -169,9 +223,25 @@ class _MainScaffoldState extends State<MainScaffold> {
     int index,
     IconData selectedIcon,
     IconData unselectedIcon,
-    String label,
-  ) {
+    String label, {
+    bool showDot = false,
+  }) {
     final isSelected = _currentIndex == index;
+    final dot = showDot
+        ? Positioned(
+            top: 6,
+            right: 14,
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: AppColors.urgencyHigh,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.surface, width: 2),
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
     return Expanded(
       child: GestureDetector(
         onTap: () => _onItemTapped(index),
@@ -240,7 +310,6 @@ class _MainScaffoldState extends State<MainScaffold> {
     );
   }
 }
-
 
 // ✨ TODO C: Modal sheet untuk tombol "+"
 class _AddActionSheet extends StatelessWidget {
@@ -335,7 +404,9 @@ class _ActionOption extends StatelessWidget {
           color: bg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: enabled ? AppColors.primary.withOpacity(0.3) : AppColors.divider,
+            color: enabled
+                ? AppColors.primary.withOpacity(0.3)
+                : AppColors.divider,
           ),
         ),
         child: Row(

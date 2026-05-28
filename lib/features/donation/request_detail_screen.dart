@@ -15,6 +15,7 @@ import '../../core/services/location_service.dart';
 import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
+import '../chat/chat_screen.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -251,6 +252,22 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         icon: const Icon(Icons.arrow_back_rounded),
         onPressed: () => Navigator.pop(context),
       ),
+      actions: [
+        // Report icon (for non-owner)
+        Builder(builder: (context) {
+          final currentUser = ref.watch(authProvider).user;
+          final isOwner = currentUser != null &&
+              (currentUser.id == request.createdById || currentUser.isAdmin);
+          final isNonOwner = currentUser != null && !isOwner;
+          if (!isNonOwner) return const SizedBox.shrink();
+
+          return IconButton(
+            icon: const Icon(Icons.flag_outlined, color: Colors.black),
+            onPressed: () => _showReportDialog(request),
+            tooltip: 'Laporkan',
+          );
+        }),
+      ],
       flexibleSpace: request.imageUrl != null
           ? FlexibleSpaceBar(
               background: CachedNetworkImage(
@@ -757,22 +774,43 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           ),
         ],
 
-        // Report Button untuk non-owner
-        if (!isOwner && currentUser != null) ...[
-          const SizedBox(height: 10),
-          SizedBox(
+        // Chat
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => _showReportDialog(request),
-              icon: const Icon(Icons.flag_outlined, size: 18),
-              label: const Text('Laporkan'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-              ),
+              onPressed: () {
+                final targetUserId = request.createdById;
+                final postId = int.tryParse(request.id);
+                if (targetUserId == null ||
+                    targetUserId.isEmpty ||
+                    postId == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content:
+                            Text('Tidak dapat membuka chat untuk titik ini.')),
+                  );
+                  return;
+                }
+
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ChatScreen(
+                      targetUserId: targetUserId,
+                      contextId: postId,
+                    ),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+              label: const Text('Hubungi Komunitas'),
             ),
           ),
-        ],
+        ),
+
+        // (Laporkan dipindahkan ke SliverAppBar kanan-atas)
       ],
     );
   }

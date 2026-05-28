@@ -9,6 +9,7 @@ import '../../shared/widgets/app_widgets.dart';
 import '../donation/active_requests_screen.dart';
 import '../donation/request_detail_screen.dart';
 import '../donation/data/donation_repository.dart';
+import '../maps/maps_screen.dart';
 import '../news/news_screen.dart';
 import '../news/data/news_repository.dart';
 
@@ -143,7 +144,7 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(height: 24),
                   SectionHeader(
                     title: 'Kebutuhan Mendesak',
-                    actionLabel: 'View All',
+                    actionLabel: 'Lihat Semua',
                     onAction: () => Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -178,12 +179,12 @@ class _HomeScreenState extends State<HomeScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Hello, ${user.name}!',
+          'Halo, ${user.name}!',
           style: AppTextStyles.displayMedium,
         ),
         const SizedBox(height: 4),
         Text(
-          'Your kindness creates ripples. Ready to make an impact today?',
+          'Keramahan Anda menciptakan gelombang. Siap membuat dampak hari ini?',
           style: AppTextStyles.bodyMedium.copyWith(
             color: AppColors.textSecondary,
           ),
@@ -223,7 +224,7 @@ class _HomeScreenState extends State<HomeScreen>
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const ActiveRequestsScreen()),
+        MaterialPageRoute(builder: (_) => const MapsScreen()),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -238,9 +239,9 @@ class _HomeScreenState extends State<HomeScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Active Request', style: AppTextStyles.titleMedium),
+                  Text('Map Donasi', style: AppTextStyles.titleMedium),
                   Text(
-                    'Find active points around you',
+                    'Temukan titik-titik aktif di sekitar Anda',
                     style: AppTextStyles.bodySmall,
                   ),
                 ],

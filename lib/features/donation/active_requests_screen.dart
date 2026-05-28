@@ -7,6 +7,7 @@ import '../../shared/models/models.dart';
 
 import '../../shared/widgets/app_widgets.dart';
 import 'request_detail_screen.dart';
+import '../chat/chat_screen.dart';
 
 class ActiveRequestsScreen extends StatefulWidget {
   const ActiveRequestsScreen({super.key});
@@ -223,6 +224,28 @@ class _RequestCard extends StatelessWidget {
   final DonationRequest request;
   const _RequestCard({required this.request});
 
+  Future<void> _openChat(BuildContext context) async {
+    // Backend: Start/Get conversation
+    // POST /api/chats { target_user_id, context_type, context_id }
+    final targetUserId = request.createdById;
+    if (targetUserId == null || targetUserId.isEmpty) return;
+
+    // context_id expects integer for context_type='post' (matches backend validators)
+    // Here, Donation uses donation_points id; backend expects numeric context_id.
+    final postId = int.tryParse(request.id);
+    if (postId == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          targetUserId: targetUserId,
+          contextId: postId,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -338,14 +361,21 @@ class _RequestCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      'Lihat Detail →',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.primary,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'Lihat Detail →',
+                            style: AppTextStyles.labelMedium.copyWith(
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      // Hubungi Komunitas (Chat)
+                    ],
                   ),
                 ],
               ),

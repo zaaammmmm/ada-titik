@@ -109,7 +109,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               AppLogo(size: 80),
               const SizedBox(height: 20),
               Text(
-                'Ada Titik?',
+                'Ada Titik',
                 style: AppTextStyles.brandTitle.copyWith(fontSize: 30),
               ),
               const SizedBox(height: 8),
