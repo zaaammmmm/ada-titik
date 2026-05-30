@@ -5,7 +5,7 @@ import '../../../shared/models/models.dart';
 class NotificationRepository {
   const NotificationRepository();
 
-  // ─── GET /api/notifications/nearby ─────────────────────────────────────
+  // ─── GET /api/notifications/nearby (legacy) ───────────────────────────
   /// Get nearby donation points as notifications
   Future<List<NotificationModel>> getNearbyNotifications({
     required double lat,
@@ -49,29 +49,33 @@ class NotificationRepository {
       subtitle: item['subtitle']?.toString() ?? '',
       type: NotificationType.nearbyPoint,
       payload: {
-        // Backend v3: payload tidak dispesifikkan di docs /api/notifications/nearby,
-        // tetapi biasanya tersedia field point_id. Kita taruh ke payload untuk deep-link.
         'pointId': item['point_id']?.toString(),
-        // keep extra fields jika dibutuhkan
         'distanceMeters': item['distance_meters']?.toString(),
         'distanceMetersNumber': item['distance_meters'],
         'latitude': item['latitude'],
         'longitude': item['longitude'],
       },
       createdAt: _parseDateTime(item['created_at']),
-      read: item['read'] == true,
+      read: item['read_at'] != null || item['read'] == true,
     );
   }
 
-  // ─── GET /api/notifications (all notifications) ─────────────────────────
-  Future<List<NotificationModel>> getNotifications({
+  // ─── GET /api/notifications (event-driven v3.2) ────────────────────────
+  Future<List<NotificationModel>> getUserNotifications({
     int page = 1,
     int limit = 20,
+    bool unread = false,
   }) async {
     try {
+      final query = <String, dynamic>{
+        'page': page,
+        'limit': limit,
+        if (unread) 'unread': true,
+      };
+
       final res = await ApiClient.get<Map<String, dynamic>>(
         '/api/notifications',
-        query: {'page': page, 'limit': limit},
+        query: query,
       );
 
       final statusCode = res.statusCode ?? 0;
@@ -87,36 +91,55 @@ class NotificationRepository {
           .map(_mapNotification)
           .toList();
     } catch (e) {
-      print('❌ Error getting notifications: $e');
+      print('❌ Error getting user notifications: $e');
       return [];
     }
   }
 
   NotificationModel _mapNotification(Map<String, dynamic> item) {
-    final typeStr = item['type']?.toString() ?? 'nearby_point';
+    final typeStr = item['type']?.toString() ?? '';
     final type = _parseNotificationType(typeStr);
+
+    // Backend v3.2 kontrak: { title, body, payload, read_at, created_at }
+    final title = item['title']?.toString() ?? '';
+    final subtitle =
+        item['body']?.toString() ?? item['subtitle']?.toString() ?? '';
+
+    final payloadRaw = item['payload'];
+    final payload = payloadRaw is Map<String, dynamic> ? payloadRaw : null;
+
+    final readAt = item['read_at'];
+    final isRead = readAt != null;
 
     return NotificationModel(
       id: item['id']?.toString() ?? '',
-      title: item['title']?.toString() ?? '',
-      subtitle: item['subtitle']?.toString() ?? '',
+      title: title,
+      subtitle: subtitle,
       type: type,
-      payload: item['payload'] is Map<String, dynamic>
-          ? item['payload'] as Map<String, dynamic>?
-          : null,
+      payload: payload,
       createdAt: _parseDateTime(item['created_at']),
-      read: item['read'] == true,
+      read: isRead,
     );
   }
 
   NotificationType _parseNotificationType(String s) {
-    return switch (s) {
-      'status_update' => NotificationType.statusUpdate,
-      'like' => NotificationType.like,
-      'comment' => NotificationType.comment,
-      'comment_reply' => NotificationType.commentReply,
-      _ => NotificationType.nearbyPoint,
-    };
+    switch (s) {
+      case 'donator_departed':
+        return NotificationType.departure;
+      case 'participant_accepted':
+        return NotificationType.participantAccepted;
+      case 'participant_completed':
+        return NotificationType.participantCompleted;
+      case 'progress_updated':
+      case 'urgency_changed':
+        return NotificationType.statusUpdate;
+      case 'post_liked':
+        return NotificationType.like;
+      case 'post_commented':
+        return NotificationType.commentReply;
+      default:
+        return NotificationType.nearbyPoint;
+    }
   }
 
   // ─── PATCH /api/notifications/:id/read ─────────────────────────────────

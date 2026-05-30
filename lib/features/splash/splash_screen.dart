@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/services/notification_service.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -19,6 +21,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
   bool _navigated = false;
+
+  static const _notifPermAskedKey = 'notification_permission_asked';
 
   @override
   void initState() {
@@ -41,30 +45,74 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       ),
     );
 
-    // Defer decision to next frame to allow authProvider.init() to run.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _decide());
-
     _controller.forward();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
   }
 
-  Future<void> _decide() async {
+  Future<void> _bootstrap() async {
+    // Init auth (cek token tersimpan → auto-login jika ada)
+    await ref.read(authProvider.notifier).init();
+
+    // Minta izin notifikasi hanya SEKALI saat pertama kali buka app
+    await _requestNotificationPermissionOnce();
+
+    _navigate();
+  }
+
+  /// Tampilkan dialog izin notifikasi hanya satu kali seumur hidup install.
+  Future<void> _requestNotificationPermissionOnce() async {
+    final prefs = await SharedPreferences.getInstance();
+    final alreadyAsked = prefs.getBool(_notifPermAskedKey) ?? false;
+    if (alreadyAsked) return; // sudah pernah ditanya, skip
+
+    // Tandai sudah ditanya sebelum meminta agar tidak muncul lagi walau user close paksa
+    await prefs.setBool(_notifPermAskedKey, true);
+
+    if (!mounted) return;
+
+    // Tampilkan dialog penjelasan sebelum OS permission dialog
+    final agreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aktifkan Notifikasi?'),
+        content: const Text(
+          'Ada Titik ingin mengirimkan notifikasi secara real-time agar Anda '
+          'tidak melewatkan update donasi, konfirmasi keberangkatan, dan '
+          'pemberitahuan titik bantuan baru di sekitar Anda.\n\n'
+          'Notifikasi juga akan tetap aktif di latar belakang sehingga Anda '
+          'selalu mendapat kabar terbaru.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Nanti saja'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Izinkan'),
+          ),
+        ],
+      ),
+    );
+
+    if (agreed == true) {
+      await NotificationService.instance.requestPermission();
+    }
+  }
+
+  void _navigate() {
     if (_navigated) return;
-
-    final auth = ref.read(authProvider);
-
-    // Wait until init() completes.
-    if (auth.loading) return;
-
+    if (!mounted) return;
     _navigated = true;
 
-    if (!context.mounted) return;
-
-    if (auth.user == null || auth.token == null) {
+    final auth = ref.read(authProvider);
+    if (auth.isAuthed) {
+      context.go(auth.isAdmin ? '/admin' : '/home');
+    } else {
       context.go('/login');
-      return;
     }
-
-    context.go(auth.isAdmin ? '/admin' : '/home');
   }
 
   @override
@@ -75,15 +123,6 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final auth = ref.watch(authProvider);
-
-    // Fix: re-trigger navigation after auth init finishes.
-    // We cannot use ref.listen in initState.
-    if (!_navigated && !auth.loading) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _decide());
-    }
-
-    // Only render UI; redirection is handled in _decide().
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7F6),
       body: Center(
@@ -161,8 +200,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
             child: Container(
               width: 14,
               height: 14,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF9A825),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF9A825),
                 shape: BoxShape.circle,
               ),
             ),

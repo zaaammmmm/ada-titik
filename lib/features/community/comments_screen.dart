@@ -154,6 +154,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       controller: _controller,
                       minLines: 1,
                       maxLines: 3,
+                      maxLength: 500,
+                      enabled: !_submitting,
                       decoration: InputDecoration(
                         hintText: 'Tulis komentar...',
                         contentPadding: const EdgeInsets.symmetric(

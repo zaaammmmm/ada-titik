@@ -13,6 +13,7 @@ import '../../shared/widgets/app_widgets.dart';
 import '../donation/donation_history_screen.dart';
 import 'account_settings_screen.dart';
 import 'edit_profile_dialog.dart';
+import 'user_activity_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -266,8 +267,13 @@ class _ProfileContent extends StatelessWidget {
       ),
       _QuickLink(
         icon: Icons.favorite_outline_rounded,
-        label: 'Daftar Keinginan',
-        onTap: () {},
+        label: 'Aktivitas Anda',
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const UserActivityScreen(),
+          ),
+        ),
       ),
       _QuickLink(
         icon: Icons.manage_accounts_outlined,

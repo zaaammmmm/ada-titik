@@ -7,6 +7,8 @@ import '../../core/constants/app_text_styles.dart';
 import '../../shared/widgets/app_widgets.dart';
 import 'chat_screen.dart';
 import 'data/chat_repository.dart';
+import '../../core/services/supabase_realtime_service.dart';
+import '../../core/providers/auth_provider.dart';
 
 class ConversationsListScreen extends ConsumerStatefulWidget {
   const ConversationsListScreen({super.key});
@@ -31,6 +33,33 @@ class _ConversationsListScreenState
   void initState() {
     super.initState();
     _load();
+
+    // Realtime subscription for chat conversations (preview/unread badge).
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final userId = ref.read(authProvider).user?.id;
+      if (userId == null || userId.isEmpty) return;
+
+      final realtime = SupabaseRealtimeService();
+      await realtime.subscribeToChatConversations(
+        currentUserId: userId,
+        onUpsert: (payload) {
+          if (!mounted) return;
+          final conv = _mapConversationFromRealtime(payload);
+          setState(() {
+            final idx = _convs.indexWhere((c) => c.id == conv.id);
+            if (idx >= 0) {
+              _convs = [
+                ..._convs.sublist(0, idx),
+                conv,
+                ..._convs.sublist(idx + 1),
+              ];
+            } else {
+              _convs = [conv, ..._convs];
+            }
+          });
+        },
+      );
+    });
   }
 
   @override
@@ -110,7 +139,29 @@ class _ConversationsListScreenState
           otherUserAvatar: c.otherUserAvatar,
         ),
       ),
-    ).then((_) => _load()); // refresh after returning
+    );
+  }
+
+  ChatConversationDto _mapConversationFromRealtime(Map<String, dynamic> row) {
+    // Expect fields similar to listConversations REST contract.
+    final unreadCount = (row['unread_count'] as num?)?.toInt() ?? 0;
+
+    final lastAtRaw = row['last_activity_at']?.toString();
+    final lastAt = lastAtRaw != null
+        ? DateTime.tryParse(lastAtRaw) ?? DateTime.now()
+        : DateTime.now();
+
+    return ChatConversationDto(
+      id: (row['id'] as num).toInt(),
+      contextType: row['context_type']?.toString() ?? 'post',
+      contextId: (row['context_id'] as num).toInt(),
+      otherUserId: row['other_user_id']?.toString() ?? '',
+      otherUserName: row['other_user_name']?.toString() ?? 'User',
+      otherUserAvatar: row['other_user_avatar']?.toString() ?? '',
+      lastActivityAt: lastAt,
+      lastMessageBody: row['last_message_body']?.toString() ?? '',
+      unread: unreadCount > 0,
+    );
   }
 
   @override

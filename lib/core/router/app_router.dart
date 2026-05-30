@@ -2,8 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_screen.dart';
+import '../../features/auth/forget_password_screen.dart';
 import '../../features/auth/login_screen.dart';
+import '../../features/auth/register_screen.dart';
 import '../../features/auth/onboarding_screen.dart';
+import '../../features/auth/terms_and_conditions_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../shared/widgets/main_scaffold.dart';
 import '../providers/auth_provider.dart';
@@ -52,8 +55,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const LoginScreen(),
       ),
       GoRoute(
+        path: '/forget-password',
+        builder: (context, state) => const ForgetPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/terms',
+        builder: (context, state) => const TermsAndConditionsScreen(),
+      ),
+      GoRoute(
         path: '/onboarding',
         builder: (context, state) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: '/register',
+        builder: (context, state) => const RegisterScreen(),
       ),
       GoRoute(
         path: '/admin',

@@ -196,21 +196,23 @@ class _MainScaffoldState extends State<MainScaffold> {
           height: 64,
           child: Row(
             children: [
-              _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home'),
+              _buildNavItem(
+                  0, Icons.home_rounded, Icons.home_outlined, 'Beranda'),
               _buildNavItem(
                 1,
                 Icons.people_rounded,
                 Icons.people_outline_rounded,
-                'Community',
+                'Komunitas',
                 showDot: _hasUnreadCommunity,
               ),
               _buildFABItem(),
-              _buildNavItem(3, Icons.chat_rounded, Icons.chat_outlined, 'Chat'),
+              _buildNavItem(
+                  3, Icons.chat_rounded, Icons.chat_outlined, 'Pesan'),
               _buildNavItem(
                 4,
                 Icons.person_rounded,
                 Icons.person_outline_rounded,
-                'Profile',
+                'Profil',
               ),
             ],
           ),

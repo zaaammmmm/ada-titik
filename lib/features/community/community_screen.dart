@@ -37,6 +37,11 @@ class _CommunityScreenState extends State<CommunityScreen>
   // Tetap butuh DonationRepository untuk cek role user di FAB
   final DonationRepository _donationRepo = const DonationRepository();
 
+  // optimistic like state per post
+  final Map<String, bool> _likedByMeByPostId = {};
+  final Map<String, int> _likesCountByPostId = {};
+  final Map<String, bool> _likeLoadingByPostId = {};
+
   // ✅ FIXED: satu future per tab — bukan satu future yang sama untuk semua tab
   late Future<List<FeedPost>> _terbaruFuture;
   late Future<List<FeedPost>> _populerFuture;
@@ -77,11 +82,40 @@ class _CommunityScreenState extends State<CommunityScreen>
   }
 
   Future<void> _handleLike(String postId) async {
+    final current = _likedByMeByPostId[postId];
+    final currentCount = _likesCountByPostId[postId];
+
+    // set loading + optimistic toggle
+    setState(() {
+      _likeLoadingByPostId[postId] = true;
+      final nextLiked = current == null ? true : !current;
+      final baseCount = currentCount ?? 0;
+      final nextCount =
+          nextLiked ? baseCount + 1 : (baseCount - 1).clamp(0, 1 << 30);
+
+      _likedByMeByPostId[postId] = nextLiked;
+      _likesCountByPostId[postId] = nextCount;
+    });
+
     try {
-      await _communityRepo.toggleLike(postId);
+      final result = await _communityRepo.toggleLike(postId);
+      if (!mounted) return;
+      setState(() {
+        _likedByMeByPostId[postId] = result.liked;
+        _likesCountByPostId[postId] = result.likesCount;
+        _likeLoadingByPostId[postId] = false;
+      });
+
+      // tetap refresh agar data lain (mis. comments) sinkron
       _refreshAll();
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _likeLoadingByPostId[postId] = false;
+        // rollback ke nilai sebelumnya jika ada
+        if (current != null) _likedByMeByPostId[postId] = current;
+        if (currentCount != null) _likesCountByPostId[postId] = currentCount;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal like postingan: $e')),
       );
@@ -131,8 +165,9 @@ class _CommunityScreenState extends State<CommunityScreen>
     );
   }
 
-  // ✅ FIXED: terima future sebagai parameter agar setiap tab berbeda
+// ✅ FIXED: terima future sebagai parameter agar setiap tab berbeda
   Widget _buildFeed(Future<List<FeedPost>> future) {
+    // optimistic UI uses local maps
     return FutureBuilder<List<FeedPost>>(
       future: future,
       builder: (context, snapshot) {
@@ -166,7 +201,34 @@ class _CommunityScreenState extends State<CommunityScreen>
         }
 
         final feed = snapshot.data ?? [];
-        if (feed.isEmpty) {
+
+        // apply optimistic maps onto feed items
+        final appliedFeed = feed.map((p) {
+          final liked = _likedByMeByPostId.containsKey(p.id)
+              ? _likedByMeByPostId[p.id]!
+              : p.likedByMe;
+          final likesCount = _likesCountByPostId.containsKey(p.id)
+              ? _likesCountByPostId[p.id]!
+              : p.likes;
+          return FeedPost(
+            id: p.id,
+            authorName: p.authorName,
+            authorAvatar: p.authorAvatar,
+            authorRole: p.authorRole,
+            content: p.content,
+            timeAgo: p.timeAgo,
+            type: p.type,
+            imageUrl: p.imageUrl,
+            likes: likesCount,
+            comments: p.comments,
+            tagLabel: p.tagLabel,
+            likedByMe: liked,
+            pointId: p.pointId,
+            commentsList: p.commentsList,
+          );
+        }).toList();
+
+        if (appliedFeed.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -185,12 +247,16 @@ class _CommunityScreenState extends State<CommunityScreen>
           onRefresh: () async => _refreshAll(),
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: feed.length,
+            itemCount: appliedFeed.length,
             separatorBuilder: (_, __) => const SizedBox(height: 0),
-            itemBuilder: (context, index) => _FeedCard(
-              post: feed[index],
-              onLike: () => _handleLike(feed[index].id),
-            ),
+            itemBuilder: (context, index) {
+              final p = appliedFeed[index];
+              return _FeedCard(
+                post: p,
+                isLikeLoading: _likeLoadingByPostId[p.id] ?? false,
+                onLike: () => _handleLike(p.id),
+              );
+            },
           ),
         );
       },
@@ -239,8 +305,13 @@ class _RoleFab extends StatelessWidget {
 class _FeedCard extends StatelessWidget {
   final FeedPost post;
   final VoidCallback? onLike;
+  final bool isLikeLoading;
 
-  const _FeedCard({required this.post, this.onLike});
+  const _FeedCard({
+    required this.post,
+    this.onLike,
+    this.isLikeLoading = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -322,27 +393,49 @@ class _FeedCard extends StatelessWidget {
             post.content,
             style: AppTextStyles.bodyMedium.copyWith(height: 1.55),
           ),
-          // Image
+          // Instagram-like Image
           if (post.imageUrl != null) ...[
             const SizedBox(height: 10),
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                post.imageUrl!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: 180,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 180,
-                  color: AppColors.primaryContainer,
-                  child: Center(
-                    child: Icon(
-                      Icons.image_outlined,
-                      color: AppColors.textLight,
-                      size: 36,
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                children: [
+                  // image
+                  Image.network(
+                    post.imageUrl!,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: 260,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 260,
+                      color: AppColors.primaryContainer,
+                      child: Center(
+                        child: Icon(
+                          Icons.image_outlined,
+                          color: AppColors.textLight,
+                          size: 44,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  // subtle gradient for depth
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.00),
+                              Colors.black.withOpacity(0.08),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -352,33 +445,43 @@ class _FeedCard extends StatelessWidget {
           // Action row
           Row(
             children: [
-              // Like button
-              GestureDetector(
-                onTap: onLike,
-                child: Row(
-                  children: [
-                    Icon(
-                      post.likedByMe
-                          ? Icons.thumb_up_rounded
-                          : Icons.thumb_up_outlined,
-                      size: 18,
-                      color: post.likedByMe
-                          ? AppColors.primary
-                          : AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${post.likes}',
-                      style: AppTextStyles.bodySmall,
-                    ),
-                  ],
+// Like button
+              InkWell(
+                onTap: isLikeLoading ? null : onLike,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      isLikeLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              post.likedByMe
+                                  ? Icons.thumb_up_rounded
+                                  : Icons.thumb_up_outlined,
+                              size: 18,
+                              color: post.likedByMe
+                                  ? AppColors.primary
+                                  : AppColors.textSecondary,
+                            ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${post.likes}',
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
               const SizedBox(width: 16),
 
-              // Comment button
-              GestureDetector(
+// Comment button
+              InkWell(
                 onTap: () {
                   Navigator.push(
                     context,
@@ -387,19 +490,23 @@ class _FeedCard extends StatelessWidget {
                     ),
                   );
                 },
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.chat_bubble_outline_rounded,
-                      size: 18,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${post.comments}',
-                      style: AppTextStyles.bodySmall,
-                    ),
-                  ],
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 18,
+                        color: AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${post.comments}',
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
               ),
 

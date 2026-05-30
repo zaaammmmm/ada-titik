@@ -40,8 +40,16 @@ dependencies:
 
   # Location
   geolocator: ^11.0.0
-  permission_handler: ^11.0.0
+  permission_handler: ^11.3.0
 
+  # Notifikasi lokal (Android, iOS)
+  flutter_local_notifications: ^17.2.3
+
+  # Ikon
+  cupertino_icons: ^1.0.8
+
+
+  supabase_flutter: ^2.8.3
 
 dev_dependencies:
   flutter_test:
@@ -51,6 +59,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
   assets:
     - assets/images/
     - assets/icons/

@@ -1,8 +1,47 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- ─── Jaringan ─────────────────────────────────────────────────── -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- ─── Lokasi ───────────────────────────────────────────────────── -->
+    <!-- Izin dasar (required oleh geolocator) -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Lokasi background (opsional – hanya jika fitur tracking aktif di BG) -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
+    <!-- ─── Notifikasi (Android 13+ wajib minta runtime) ────────────── -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Notifikasi exact-alarm (buat scheduled notifications) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Agar notifikasi tetap hidup saat device restart -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Wake lock agar notifikasi muncul saat layar mati -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- ─── Kamera & Storage (image_picker) ─────────────────────────── -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- Legacy storage untuk Android < 13 -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+
+    <!-- ─── Fitur hardware opsional (tidak wajib ada di device) ──────── -->
+    <uses-feature android:name="android.hardware.location.gps"
+        android:required="false"/>
+    <uses-feature android:name="android.hardware.location.network"
+        android:required="false"/>
+    <uses-feature android:name="android.hardware.camera"
+        android:required="false"/>
+
     <application
         android:label="ada_titik"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -12,10 +51,6 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
@@ -25,21 +60,38 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+
+        <!-- Receiver untuk menjalankan ulang notifikasi setelah reboot -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Broadcast receiver untuk alarm scheduled notifications -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
-    <!-- Required to query activities that can process text, see:
-         https://developer.android.com/training/package-visibility and
-         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
-         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Buka Settings izin lokasi/notifikasi -->
+        <intent>
+            <action android:name="android.settings.APPLICATION_DETAILS_SETTINGS"/>
+        </intent>
+        <intent>
+            <action android:name="android.settings.LOCATION_SOURCE_SETTINGS"/>
         </intent>
     </queries>
 </manifest>

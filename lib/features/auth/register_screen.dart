@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/gestures.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -139,7 +140,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   Text('Create Account', style: AppTextStyles.headlineLarge),
                   const SizedBox(height: 6),
                   Text(
-                    'Join the Ada Titik community to start\nmaking an impact.',
+                    'bergabung dengan Ada Titik untuk memberikan dampak yang nyata.',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -237,14 +238,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 text: 'Syarat & Ketentuan',
                                 style: AppTextStyles.bodySmall.copyWith(
                                   color: AppColors.primary,
+                                  decoration: TextDecoration.underline,
                                 ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = () {
+                                    // ignore: use_build_context_synchronously
+                                    context.go('/terms');
+                                  },
                               ),
                               const TextSpan(text: ' serta '),
                               TextSpan(
                                 text: 'Kebijakan Privasi',
                                 style: AppTextStyles.bodySmall.copyWith(
                                   color: AppColors.primary,
+                                  decoration: TextDecoration.underline,
                                 ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = () {
+                                    // ignore: use_build_context_synchronously
+                                    context.go('/terms');
+                                  },
                               ),
                               const TextSpan(text: ' yang berlaku.'),
                             ],

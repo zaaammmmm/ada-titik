@@ -85,7 +85,9 @@ class ChatRepository {
         contextType: e['context_type']?.toString() ?? 'post',
         contextId: (e['context_id'] as num).toInt(),
         otherUserId: e['other_user_id']?.toString() ?? '',
-        otherUserName: e['other_user_name']?.toString() ?? 'User',
+        otherUserName: e['other_user_name']?.toString() ??
+            e['other_user']?.toString() ??
+            'Komunitas',
         otherUserAvatar: e['other_user_avatar']?.toString() ?? '',
         lastActivityAt: lastAt,
         lastMessageBody: e['last_message_body']?.toString() ?? '',
@@ -110,8 +112,17 @@ class ChatRepository {
 
     final body = res.data ?? {};
     final data = body['data'];
+
     if (data is! Map<String, dynamic>) {
-      throw StateError('Unexpected response format for startConversation');
+      // Backend contract guardrail.
+      // Saat ini frontend mengharapkan `body['data']` berupa Map.
+      // Jika backend mengirim bentuk lain (null/list/error), tampilkan raw body.
+      final errMsg = body['message']?.toString() ??
+          body['error']?.toString() ??
+          'Unknown backend response';
+      throw StateError(
+        'Bad startConversation response: $errMsg. raw=$body',
+      );
     }
 
     return ChatConversation(
@@ -147,8 +158,13 @@ class ChatRepository {
               conversationId: (e['conversation_id'] as num).toInt(),
               senderId: e['sender_id']?.toString() ?? '',
               body: e['body']?.toString() ?? '',
-              createdAt: DateTime.parse(e['created_at']?.toString() ??
-                  DateTime.now().toIso8601String()),
+              createdAt: (() {
+                final raw = e['created_at']?.toString();
+                final parsed = DateTime.tryParse(raw ?? '');
+                if (parsed == null) return DateTime.now();
+                // Normalize to local time so jam sesuai perangkat.
+                return parsed.isUtc ? parsed.toLocal() : parsed;
+              })(),
             ))
         .toList();
   }

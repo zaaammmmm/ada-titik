@@ -38,24 +38,34 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState());
+  // State awal: loading = TRUE agar router menahan di splash
+  // dan tidak langsung redirect ke /login sebelum token dicek.
+  AuthNotifier() : super(const AuthState(loading: true));
 
   final _repo = const DonationRepository();
+  bool _initCalled = false;
 
+  /// Baca token tersimpan dan fetch profile.
+  /// Dipanggil dari SplashScreen — router menunggu di '/' selama loading=true.
   Future<void> init() async {
-    if (state.loading) return;
-    state = state.copyWith(loading: true, error: null);
+    if (_initCalled) return;
+    _initCalled = true;
+
+    // loading sudah true dari constructor, tidak perlu set ulang
 
     final token = await AuthStorage.readToken();
     if (token == null || token.isEmpty) {
-      state = const AuthState();
+      // Tidak ada token → langsung selesai, router akan redirect ke /login
+      state = const AuthState(loading: false);
       return;
     }
 
     try {
       final profile = await _repo.getProfile();
-      state = state.copyWith(token: token, user: profile, loading: false);
-    } catch (e) {
+      // Token valid → set user, router akan redirect ke /home atau /admin
+      state = AuthState(token: token, user: profile, loading: false);
+    } catch (_) {
+      // Token expired / invalid → hapus dan arahkan ke login
       await AuthStorage.clear();
       state = const AuthState(loading: false);
     }
@@ -68,19 +78,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = const AuthState();
       return;
     }
-
-    final profile = await _repo.getProfile();
-    state = state.copyWith(token: token, user: profile, loading: false);
+    try {
+      final profile = await _repo.getProfile();
+      state = state.copyWith(token: token, user: profile, loading: false);
+    } catch (_) {
+      await AuthStorage.clear();
+      state = const AuthState(loading: false);
+    }
   }
 
   Future<void> logout() async {
     await AuthStorage.clear();
-    state = const AuthState();
+    _initCalled = false;
+    state = const AuthState(loading: false);
   }
 
   void setTokenAndUser({required String token, required UserModel user}) {
-    state =
-        state.copyWith(token: token, user: user, loading: false, error: null);
+    _initCalled = true;
+    state = AuthState(token: token, user: user, loading: false);
   }
 
   void setError(String msg) {
@@ -89,11 +104,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  final notifier = AuthNotifier();
-  // Fire and forget; splash/router guard will rely on state after init.
-  unawaited(notifier.init());
-  return notifier;
+  return AuthNotifier();
+  // init() TIDAK dipanggil di sini — dipanggil dari SplashScreen._bootstrap()
+  // State awal loading=true membuat router menunggu di splash secara otomatis.
 });
-
-// ignore: non_constant_identifier_names
-void unawaited(Future<void> f) {}

@@ -275,6 +275,9 @@ enum NotificationType {
   like,
   comment,
   commentReply,
+  departure,
+  participantAccepted,
+  participantCompleted,
 }
 
 class NotificationModel {

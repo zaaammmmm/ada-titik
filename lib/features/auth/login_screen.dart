@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -57,14 +58,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
       if (res.statusCode == 200) {
         final token = res.data?['token'];
+
         if (token is! String || token.isEmpty) {
           setState(() => _inlineError = 'Token tidak ditemukan dari backend.');
           return;
         }
 
-        await AuthStorage.writeToken(token);
+        try {
+          await AuthStorage.writeToken(token);
+        } catch (e) {
+          setState(() => _inlineError = 'Gagal menyimpan sesi login.');
+          return;
+        }
 
         final profile = await DonationRepository().getProfile();
+
         if (!mounted) return;
 
         ref.read(authProvider.notifier).setTokenAndUser(
@@ -73,19 +81,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             );
 
         if (!mounted) return;
+
         if (profile.isAdmin) {
           context.go('/admin');
         } else {
           context.go('/home');
         }
+
+        return;
+      }
+
+      if (res.statusCode == 401) {
+        setState(() => _inlineError = 'Email atau password salah.');
         return;
       }
 
       final msg = (res.data?['message'] ?? res.data?['error'])?.toString();
       setState(() => _inlineError = msg ?? 'Login gagal (${res.statusCode}).');
-    } catch (_) {
+    } on DioException catch (e) {
+      // DioException pada web umumnya karena CORS atau network error
+      final status = e.response?.statusCode;
+      final serverMsg = (e.response?.data is Map)
+          ? ((e.response?.data as Map)['message'] ??
+                  (e.response?.data as Map)['error'])
+              ?.toString()
+          : null;
+
+      if (e.type == DioExceptionType.connectionError ||
+          e.type == DioExceptionType.unknown) {
+        setState(() => _inlineError =
+            'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.');
+      } else if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
+        setState(() => _inlineError =
+            'Koneksi timeout. Server mungkin sedang sibuk, coba lagi.');
+      } else {
+        setState(() => _inlineError =
+            serverMsg ?? 'Login gagal${status != null ? ' ($status)' : ''}.');
+      }
+    } catch (e) {
       setState(
-          () => _inlineError = 'Login gagal. Periksa koneksi/URL backend.');
+          () => _inlineError = 'Terjadi kesalahan tak terduga. Coba lagi.');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -123,9 +159,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 36),
               _buildForm(emailRegex),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _login,
-                child: Text(_isLoading ? 'Logging in...' : 'Login'),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _login,
+                  child: Text(_isLoading ? 'Logging in...' : 'Login'),
+                ),
               ),
               const SizedBox(height: 24),
               Row(
@@ -140,7 +179,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              // Social login disabled
               Row(
                 children: [
                   Expanded(
@@ -158,9 +196,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: AppColors.textSecondary,
                       )),
                   GestureDetector(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                    ),
+                    onTap: () => context.go('/register'),
                     child: Text(
                       'Daftar Sekarang',
                       style: AppTextStyles.labelLarge.copyWith(
@@ -195,6 +231,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             TextFormField(
               controller: _emailCtrl,
               keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
               validator: (v) {
                 final value = (v ?? '').trim();
                 if (value.isEmpty) return 'Email wajib diisi.';
@@ -215,15 +252,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text('PASSWORD', style: AppTextStyles.captionUppercase),
-                Text('Lupa Password?',
+                GestureDetector(
+                  onTap: () => context.go('/forget-password'),
+                  child: Text(
+                    'Lupa Password?',
                     style: AppTextStyles.labelSmall
-                        .copyWith(color: AppColors.primary)),
+                        .copyWith(color: AppColors.primary),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
             TextFormField(
               controller: _passCtrl,
               obscureText: _obscurePass,
+              autocorrect: false,
+              enableSuggestions: false,
               validator: (v) {
                 final value = (v ?? '').trim();
                 if (value.isEmpty) return 'Password wajib diisi.';

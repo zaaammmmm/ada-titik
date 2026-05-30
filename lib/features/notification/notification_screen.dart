@@ -3,23 +3,26 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../core/services/location_service.dart';
-
 import 'dart:async';
 
+import '../../core/providers/auth_provider.dart';
+import '../../core/services/supabase_realtime_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../features/donation/request_detail_screen.dart';
+import '../../features/donation/departure_review_screen.dart';
 import '../../shared/models/models.dart';
 
 import 'data/notification_repository.dart';
 
-class NotificationScreen extends StatefulWidget {
+class NotificationScreen extends ConsumerStatefulWidget {
   const NotificationScreen({super.key});
 
   @override
-  State<NotificationScreen> createState() => _NotificationScreenState();
+  ConsumerState<NotificationScreen> createState() => _NotificationScreenState();
 }
 
-class _NotificationScreenState extends State<NotificationScreen>
+class _NotificationScreenState extends ConsumerState<NotificationScreen>
     with WidgetsBindingObserver {
   late final NotificationRepository _repo;
   late Future<List<NotificationItem>> _future;
@@ -27,27 +30,27 @@ class _NotificationScreenState extends State<NotificationScreen>
   Timer? _timer;
   bool _appInForeground = true;
 
-  // mapping tipe event (string dari NotificationType.name) -> iconType (untuk UI)
   String _mapNotificationType(String raw) {
     switch (raw.toLowerCase()) {
-      case 'like':
-        return 'favorite';
-      case 'comment':
-        return 'comment';
-      case 'statusupdate':
-      case 'status_update':
+      case 'donator_departed':
+        return 'departure';
+      case 'participant_accepted':
+        return 'accepted';
+      case 'participant_completed':
+        return 'completed';
+      case 'progress_updated':
+      case 'urgency_changed':
         return 'warning';
-      case 'commentreply':
-      case 'comment_reply':
+      case 'post_liked':
+        return 'favorite';
+      case 'post_commented':
         return 'comment';
       default:
         return 'nearby_donation';
     }
   }
 
-  // keep UI model sederhana (NotificationItem), karena response v3 belum selalu kirim read flag
   final ScrollController _scrollController = ScrollController();
-
   List<NotificationItem> _items = const [];
 
   @override
@@ -55,60 +58,119 @@ class _NotificationScreenState extends State<NotificationScreen>
     super.initState();
     _repo = const NotificationRepository();
 
+    // Load ALL notifications (bukan hanya unread) agar notifikasi tidak hilang
     _future = _loadNotifications();
 
-    // Auto-refresh notifikasi (lebih realtime)
-    _timer = Timer.periodic(const Duration(seconds: 90), (_) async {
+    // Polling setiap 30 detik
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!_appInForeground || !mounted) return;
       final loaded = await _loadNotifications();
       if (!mounted) return;
-      setState(() {
-        _items = loaded;
-      });
+      setState(() => _items = loaded);
     });
 
     _future.then((loaded) {
       if (!mounted) return;
       setState(() => _items = loaded);
     });
+
+    // Realtime insert notifications (Supabase)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final userId = ref.read(authProvider).user?.id;
+      if (userId == null || userId.isEmpty) return;
+
+      final realtime = SupabaseRealtimeService();
+      await realtime.subscribeToNotifications(
+        currentUserId: userId,
+        onInsert: (payload) {
+          if (!mounted) return;
+          final mapped = _mapNotificationItemFromRealtime(payload);
+          if (mapped == null) return;
+
+          setState(() {
+            final existingIdx = _items.indexWhere((e) => e.id == mapped.id);
+            if (existingIdx >= 0) {
+              _items = [
+                ..._items.sublist(0, existingIdx),
+                mapped,
+                ..._items.sublist(existingIdx + 1),
+              ];
+            } else {
+              _items = [mapped, ..._items];
+            }
+          });
+        },
+      );
+    });
   }
 
-  // ✅ FIXED: dapatkan koordinat GPS user yang aktual, bukan hardcoded Yogyakarta
-  // ✅ FIXED: mapping field sesuai response v3 (content = judul titik, bukan authorName)
+  /// Load ALL notifications — read dan unread — agar tidak ada yang menghilang.
   Future<List<NotificationItem>> _loadNotifications() async {
-    // Coba ambil posisi GPS user aktual
-    double lat = LocationService.defaultCenter.latitude;
-    double lng = LocationService.defaultCenter.longitude;
-
-    final pos = await LocationService.instance.getCurrentPosition();
-    if (pos != null) {
-      lat = pos.latitude;
-      lng = pos.longitude;
-    }
-
-    final posts = await _repo.getNearbyNotifications(
-      lat: lat,
-      lng: lng,
-      limit: 10,
+    final notifications = await _repo.getUserNotifications(
+      page: 1,
+      limit: 50,
+      unread: false, // ambil semua, bukan hanya unread
     );
 
-    return posts
+    return notifications
         .map((n) => NotificationItem(
               id: n.id,
               title: n.title,
               subtitle: n.subtitle,
               time: n.createdAt.toString(),
-              unread: true,
+              unread: !n.read,
               iconType: _mapNotificationType(n.type.name),
-              pointId: n.payload?['pointId']?.toString() ??
-                  n.payload?['point_id']?.toString(),
-              postId: n.payload?['postId']?.toString() ??
-                  n.payload?['post_id']?.toString(),
+              rawType: n.type.name,
+              pointId: n.payload?['point_id']?.toString() ??
+                  n.payload?['pointId']?.toString() ??
+                  n.payload?['point']?.toString(),
+              postId: n.payload?['post_id']?.toString() ??
+                  n.payload?['postId']?.toString(),
             ))
         .toList();
   }
 
-  void _markAllAsRead() {
+  NotificationItem? _mapNotificationItemFromRealtime(
+      Map<String, dynamic> item) {
+    final id = item['id']?.toString();
+    if (id == null || id.isEmpty) return null;
+
+    final typeStr = item['type']?.toString() ?? '';
+    final mappedType = _mapNotificationType(typeStr);
+
+    final title = item['title']?.toString() ?? '';
+    final body = item['body']?.toString();
+    final subtitle =
+        body?.isNotEmpty == true ? body! : (item['subtitle']?.toString() ?? '');
+
+    final createdAtRaw = item['created_at']?.toString();
+    final createdAt = DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.now();
+
+    final readAt = item['read_at'];
+    final isRead = readAt != null;
+
+    final payloadRaw = item['payload'];
+    final payload = payloadRaw is Map<String, dynamic> ? payloadRaw : null;
+
+    return NotificationItem(
+      id: id,
+      title: title,
+      subtitle: subtitle,
+      time: createdAt.toString(),
+      unread: !isRead,
+      iconType: mappedType,
+      rawType: typeStr,
+      pointId: payload?['point_id']?.toString() ??
+          payload?['pointId']?.toString() ??
+          payload?['point']?.toString(),
+      postId: payload?['post_id']?.toString() ?? payload?['postId']?.toString(),
+    );
+  }
+
+  void _markAllAsRead() async {
+    // Panggil API mark-all-as-read
+    await _repo.markAllAsRead();
+    if (!mounted) return;
     setState(() {
       _items = _items
           .map((e) => NotificationItem(
@@ -118,8 +180,20 @@ class _NotificationScreenState extends State<NotificationScreen>
                 time: e.time,
                 unread: false,
                 iconType: e.iconType,
+                rawType: e.rawType,
+                pointId: e.pointId,
+                postId: e.postId,
               ))
           .toList();
+    });
+  }
+
+  /// Hapus satu notifikasi dari list dan backend.
+  Future<void> _deleteNotification(String id) async {
+    await _repo.deleteNotification(id);
+    if (!mounted) return;
+    setState(() {
+      _items = _items.where((e) => e.id != id).toList();
     });
   }
 
@@ -200,7 +274,7 @@ class _NotificationScreenState extends State<NotificationScreen>
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Tidak ada notifikasi terbaru di sekitar Anda.',
+                  'Tidak ada notifikasi',
                   textAlign: TextAlign.center,
                   style: AppTextStyles.titleMedium.copyWith(
                     color: AppColors.textSecondary,
@@ -211,55 +285,146 @@ class _NotificationScreenState extends State<NotificationScreen>
           }
 
           return ListView.separated(
+            controller: _scrollController,
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: notifications.length,
             separatorBuilder: (_, __) => const SizedBox(height: 4),
             itemBuilder: (context, index) {
               final item = notifications[index];
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () async {
-                  // Deep-link sesuai payload (pointId/postId).
-                  // Jika backend mengirim payload pointId, kita arahkan ke detail titik.
-                  if (item.pointId != null && item.pointId!.isNotEmpty) {
-                    if (!context.mounted) return;
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => RequestDetailScreen(
-                          // RequestDetailScreen butuh model DonationRequest.
-                          // Karena NotificationItem tidak menyertakan semua field, sementara fallback
-                          // navigasi dilakukan ke route dengan placeholder (mengandalkan reload di screen).
-                          request: DonationRequest(
-                            id: item.pointId!,
-                            title: item.subtitle,
-                            description: '',
-                            authorName: '',
-                            urgency: UrgencyLevel.normal,
-                            status: RequestStatus.open,
-                            category: 'Umum',
-                            location: '',
-                            timeAgo: '',
+              return Dismissible(
+                key: ValueKey(item.id),
+                direction: DismissDirection.endToStart,
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  color: AppColors.urgencyHigh,
+                  child: const Icon(Icons.delete_outline_rounded,
+                      color: Colors.white, size: 28),
+                ),
+                confirmDismiss: (_) async {
+                  return await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Hapus Notifikasi?'),
+                      content: const Text(
+                          'Notifikasi ini akan dihapus secara permanen.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Batal'),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.urgencyHigh,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Hapus'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                onDismissed: (_) => _deleteNotification(item.id),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () async {
+                    // HANYA mark as read — notifikasi TIDAK dihapus dari list
+                    if (item.unread) {
+                      await _repo.markAsRead(item.id);
+                      if (!mounted) return;
+                      setState(() {
+                        _items = _items
+                            .map((e) => e.id == item.id
+                                ? NotificationItem(
+                                    id: e.id,
+                                    title: e.title,
+                                    subtitle: e.subtitle,
+                                    time: e.time,
+                                    unread: false, // tandai sebagai dibaca
+                                    iconType: e.iconType,
+                                    rawType: e.rawType,
+                                    pointId: e.pointId,
+                                    postId: e.postId,
+                                  )
+                                : e)
+                            .toList();
+                        // Catatan: item TIDAK dihapus dari _items
+                      });
+                    }
+
+                    // Deep-link: payload.point_id -> donation detail
+                    if (item.pointId != null && item.pointId!.isNotEmpty) {
+                      if (!context.mounted) return;
+
+                      final isDepartureNotif =
+                          item.iconType.toLowerCase() == 'departure' ||
+                              item.rawType.toLowerCase() == 'donator_departed';
+                      if (isDepartureNotif) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DepartureReviewScreen(
+                              pointId: item.pointId!,
+                              pointTitle: item.subtitle.isNotEmpty
+                                  ? item.subtitle
+                                  : item.title,
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RequestDetailScreen(
+                            request: DonationRequest(
+                              id: item.pointId!,
+                              title: item.subtitle.isNotEmpty
+                                  ? item.subtitle
+                                  : item.title,
+                              description: '',
+                              authorName: '',
+                              urgency: UrgencyLevel.normal,
+                              status: RequestStatus.open,
+                              category: 'Umum',
+                              location: '',
+                              timeAgo: '',
+                              imageUrl: null,
+                              goalAmount: 0,
+                              collectedAmount: 0,
+                              latitude: -7.7956,
+                              longitude: 110.3695,
+                              distanceKm: 0,
+                              tags: const [],
+                              goalText: null,
+                              avgRating: null,
+                            ),
                           ),
                         ),
-                      ),
-                    );
-                    return;
-                  }
+                      );
+                      return;
+                    }
 
-                  // Jika payload hanya postId, buka comments screen (jika tersedia di project).
-                  if (item.postId != null && item.postId!.isNotEmpty) {
-                    // Fitur ini opsional karena CommentsScreen butuh int postId.
-                  }
-                },
-                child: _buildNotifItem(
-                  icon: _iconForType(item.iconType),
-                  iconBg: _bgForType(item.iconType),
-                  iconColor: _colorForType(item.iconType),
-                  title: item.title,
-                  subtitle: item.subtitle,
-                  time: item.time,
-                  isUnread: item.unread,
+                    if (item.postId != null && item.postId!.isNotEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Detail postingan belum tersedia.'),
+                        ),
+                      );
+                    }
+                  },
+                  child: _buildNotifItem(
+                    icon: _iconForType(item.iconType),
+                    iconBg: _bgForType(item.iconType),
+                    iconColor: _colorForType(item.iconType),
+                    title: item.title,
+                    subtitle: item.subtitle,
+                    time: item.time,
+                    isUnread: item.unread,
+                    itemId: item.id,
+                  ),
                 ),
               );
             },
@@ -271,33 +436,36 @@ class _NotificationScreenState extends State<NotificationScreen>
 
   IconData _iconForType(String type) {
     return switch (type) {
-      'bantuanDibutuhkan' => Icons.location_on_rounded,
-      'pertanyaan' => Icons.question_mark_rounded,
-      'updateKomunitas' => Icons.campaign_rounded,
-      'inspirasi' => Icons.lightbulb_outline_rounded,
-      'kisahSukses' => Icons.check_circle_rounded,
+      'departure' => Icons.directions_run_rounded,
+      'accepted' => Icons.check_circle_outline_rounded,
+      'completed' => Icons.stars_rounded,
+      'warning' => Icons.update_rounded,
+      'favorite' => Icons.favorite_outline_rounded,
+      'comment' => Icons.comment_outlined,
       _ => Icons.notifications_outlined,
     };
   }
 
   Color _colorForType(String type) {
     return switch (type) {
-      'bantuanDibutuhkan' => AppColors.urgencyHigh,
-      'pertanyaan' => const Color(0xFF1565C0),
-      'updateKomunitas' => AppColors.primary,
-      'inspirasi' => AppColors.urgencyMedium,
-      'kisahSukses' => AppColors.statusCompleted,
+      'departure' => AppColors.statusProgress,
+      'accepted' => AppColors.primary,
+      'completed' => AppColors.statusCompleted,
+      'warning' => AppColors.urgencyMedium,
+      'favorite' => AppColors.urgencyHigh,
+      'comment' => const Color(0xFF1565C0),
       _ => AppColors.primary,
     };
   }
 
   Color _bgForType(String type) {
     return switch (type) {
-      'bantuanDibutuhkan' => AppColors.urgencyHighLight,
-      'pertanyaan' => const Color(0xFFE3F2FD),
-      'updateKomunitas' => AppColors.primaryContainer,
-      'inspirasi' => AppColors.urgencyMediumLight,
-      'kisahSukses' => AppColors.statusCompletedLight,
+      'departure' => AppColors.statusProgress.withOpacity(0.12),
+      'accepted' => AppColors.primaryContainer,
+      'completed' => AppColors.statusCompletedLight,
+      'warning' => AppColors.urgencyMediumLight,
+      'favorite' => AppColors.urgencyHighLight,
+      'comment' => const Color(0xFFE3F2FD),
       _ => AppColors.primaryContainer,
     };
   }
@@ -310,6 +478,7 @@ class _NotificationScreenState extends State<NotificationScreen>
     required String subtitle,
     required String time,
     required bool isUnread,
+    required String itemId,
   }) {
     return Container(
       color: isUnread ? AppColors.primaryContainer.withOpacity(0.3) : null,
@@ -372,6 +541,39 @@ class _NotificationScreenState extends State<NotificationScreen>
                 ],
               ),
             ),
+            // Tombol hapus manual (selain swipe)
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded,
+                  size: 18, color: AppColors.textLight),
+              tooltip: 'Hapus notifikasi',
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Hapus Notifikasi?'),
+                    content: const Text(
+                        'Notifikasi ini akan dihapus secara permanen.'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Batal'),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.urgencyHigh,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: const Text('Hapus'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await _deleteNotification(itemId);
+                }
+              },
+            ),
           ],
         ),
       ),
@@ -386,6 +588,7 @@ class NotificationItem {
   final String time;
   final bool unread;
   final String iconType;
+  final String rawType;
 
   /// Deep link
   final String? pointId;
@@ -398,6 +601,7 @@ class NotificationItem {
     required this.time,
     required this.unread,
     required this.iconType,
+    this.rawType = '',
     this.pointId,
     this.postId,
   });

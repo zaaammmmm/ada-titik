@@ -299,9 +299,12 @@ class DonationRepository {
 
     final authorName = item['author_name']?.toString() ??
         item['created_by_name']?.toString() ??
+        item['createdByName']?.toString() ??
         item['authorName']?.toString() ??
         item['user_name']?.toString() ??
-        'Unknown';
+        item['username']?.toString() ??
+        item['name']?.toString() ??
+        'Komunitas';
 
     final authorAvatar = item['author_avatar']?.toString() ??
         item['authorAvatar']?.toString() ??
@@ -757,49 +760,203 @@ class DonationRepository {
     }
   }
 
-  // ✅ NEW: Update donation status with geo-fencing for Completed
-  Future<void> updateDonationStatus({
+  // ───────────────────────────────────────────────────────────────────────
+  // v3.2 Flow Donation Participants
+  // Endpoint sumber notifikasi event-driven:
+  // - POST   /api/donations/:pointId/participants (donatur: Berangkat)
+  // - DELETE /api/donations/:pointId/participants/me
+  // - GET    /api/donations/:pointId/participants/me
+  // - PATCH  /api/donations/:pointId/participants/accept (komunitas bulk)
+  // - PATCH  /api/donations/:pointId/participants/complete (komunitas bulk + geo-fence)
+  // - GET    /api/donations/:pointId/participants?state=requested
+  // ───────────────────────────────────────────────────────────────────────
+
+  /// Cek status partisipasi donatur sendiri pada titik tertentu.
+  /// Backend: GET /api/donations/:pointId/participants/me
+  Future<Map<String, dynamic>?> getMyParticipation(String pointId) async {
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/donations/$pointId/participants/me',
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode == 404) return null;
+    if (statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal memuat partisipasi saya ($statusCode)';
+      throw Exception(msg);
+    }
+
+    final body = res.data ?? {};
+    return body['data'] is Map<String, dynamic>
+        ? body['data'] as Map<String, dynamic>
+        : (body['data'] is Map
+            ? Map<String, dynamic>.from(body['data'])
+            : null);
+  }
+
+  /// Batalkan keberangkatan donatur (v3.2)
+  /// Backend: DELETE /api/donations/:pointId/participants/me
+  Future<void> cancelDeparture(String pointId) async {
+    final res = await ApiClient.delete<Map<String, dynamic>>(
+      '/api/donations/$pointId/participants/me',
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200 && statusCode != 204) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal membatalkan keberangkatan ($statusCode)';
+      throw Exception(msg);
+    }
+  }
+
+  /// Komunitas/owner memperbarui progress manual.
+  /// Backend yang digunakan oleh edit_progress_screen.dart: PATCH /api/donations/:pointId/progress
+  Future<void> updateProgress({
     required String pointId,
-    required String status,
-    double? userLat,
-    double? userLng,
+    required double? goalAmount,
+    required double? collectedAmount,
   }) async {
-    final validStatuses = ['Open', 'On Progress', 'Completed'];
-    if (!validStatuses.contains(status)) {
-      throw ArgumentError('Status tidak valid: $status');
-    }
-
-    // For Completed status, require user location for geo-fencing
-    if (status == 'Completed') {
-      if (userLat == null || userLng == null) {
-        throw ArgumentError(
-            'Lokasi user (userLat, userLng) diperlukan untuk status Completed');
-      }
-    }
-
-    final data = {
-      'status': status,
-      if (userLat != null) 'user_lat': userLat,
-      if (userLng != null) 'user_lng': userLng,
+    final data = <String, dynamic>{
+      if (goalAmount != null) 'goal_amount': goalAmount,
+      if (collectedAmount != null) 'collected_amount': collectedAmount,
     };
 
     final res = await ApiClient.patch<Map<String, dynamic>>(
-      '/api/donations/$pointId/status',
+      '/api/donations/$pointId/progress',
       data: data,
     );
 
     final statusCode = res.statusCode ?? 0;
-    if (statusCode == 403) {
-      throw Exception(
-          'Anda tidak diizinkan mengubah status titik ini atau jarak > 100 meter');
-    }
     if (statusCode != 200) {
       final msg = res.data?['error']?.toString() ??
           res.data?['message']?.toString() ??
-          'Gagal mengubah status ($statusCode)';
+          'Gagal memperbarui progress ($statusCode)';
       throw Exception(msg);
     }
   }
+
+  Future<void> sendDeparture({
+    required String pointId,
+    double? userLat,
+    double? userLng,
+  }) async {
+    double? resolvedLat = userLat;
+    double? resolvedLng = userLng;
+
+    // user_lat/user_lng opsional di docs; tapi kalau belum ada, kita boleh pakai GPS.
+    if (resolvedLat == null || resolvedLng == null) {
+      final pos = await LocationService.instance.getCurrentPosition();
+      if (pos != null) {
+        resolvedLat = pos.latitude;
+        resolvedLng = pos.longitude;
+      }
+    }
+
+    final data = <String, dynamic>{
+      if (resolvedLat != null) 'user_lat': resolvedLat,
+      if (resolvedLng != null) 'user_lng': resolvedLng,
+    };
+
+    final res = await ApiClient.post<Map<String, dynamic>>(
+      '/api/donations/$pointId/participants',
+      data: data,
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200 && statusCode != 201) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal mengirim sinyal Berangkat ($statusCode)';
+      throw Exception(msg);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getParticipants({
+    required String pointId,
+    required String state,
+  }) async {
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/donations/$pointId/participants',
+      query: {
+        'state': state,
+      },
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal memuat peserta ($statusCode)';
+      throw Exception(msg);
+    }
+
+    final body = res.data ?? {};
+    final data = body['data'];
+    if (data is! List) return [];
+
+    return data.whereType<Map<String, dynamic>>().toList();
+  }
+
+  Future<void> acceptParticipants({
+    required String pointId,
+    required List<String> donatorIds,
+  }) async {
+    if (donatorIds.isEmpty) {
+      throw ArgumentError('donatorIds tidak boleh kosong');
+    }
+
+    final res = await ApiClient.patch<Map<String, dynamic>>(
+      '/api/donations/$pointId/participants/accept',
+      data: {
+        'donator_ids': donatorIds,
+      },
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal accept peserta ($statusCode)';
+      throw Exception(msg);
+    }
+  }
+
+  Future<void> completeParticipants({
+    required String pointId,
+    required List<String> donatorIds,
+    required double userLat,
+    required double userLng,
+    double? perDonatorAmount,
+  }) async {
+    if (donatorIds.isEmpty) {
+      throw ArgumentError('donatorIds tidak boleh kosong');
+    }
+
+    final data = <String, dynamic>{
+      'donator_ids': donatorIds,
+      'user_lat': userLat,
+      'user_lng': userLng,
+      if (perDonatorAmount != null) 'per_donator_amount': perDonatorAmount,
+    };
+
+    final res = await ApiClient.patch<Map<String, dynamic>>(
+      '/api/donations/$pointId/participants/complete',
+      data: data,
+    );
+
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal complete peserta ($statusCode)';
+      throw Exception(msg);
+    }
+  }
+
+  // NOTE: method legacy updateDonationStatus dihapus/di-nonaktifkan.
+  // Flow v3.2 menggunakan participants/*.
 
   // ✅ NEW: Get donation detail with ratings and documentation
   Future<

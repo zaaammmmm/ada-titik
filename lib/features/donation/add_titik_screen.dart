@@ -1,18 +1,30 @@
 // lib/features/donation/add_titik_screen.dart
-import 'package:flutter/material.dart';
-import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/models.dart';
+//
+// Layar untuk membuat titik donasi baru.
+//
+// Perubahan v2 (lokasi + izin):
+//   • Tombol "Gunakan Lokasi Saya" sekarang:
+//       - Menampilkan loading indicator saat mencari GPS.
+//       - Menangani semua kasus: serviceDisabled, permissionDenied,
+//         permissionDeniedForever, pluginUnavailable, dan timeout.
+//       - Menampilkan dialog aksi yang sesuai (buka Settings, pilih manual).
+//   • Izin kamera/galeri diminta secara eksplisit sebelum membuka picker.
+//   • Koordinat yang dipilih ditampilkan dengan format yang rapi.
+
 import 'dart:io';
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
-
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart' as ph;
 
-import '../../features/donation/data/donation_repository.dart';
-import 'location_picker_screen.dart';
+import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_text_styles.dart';
 import '../../core/services/location_service.dart';
+import '../../features/donation/data/donation_repository.dart';
+import '../../shared/models/models.dart';
+import 'location_picker_screen.dart';
 
 class AddTitikScreen extends StatefulWidget {
   const AddTitikScreen({super.key});
@@ -29,17 +41,17 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
   final _picker = ImagePicker();
   XFile? _pickedPhoto;
 
-  // Requirement: urgency level tidak ditampilkan saat add titik komunitas,
-  // dan default selalu urgent.
   UrgencyLevel _selectedUrgency = UrgencyLevel.urgent;
-  double _latitude = -7.7956;
-  double _longitude = 110.3695;
+  double _latitude = LocationService.defaultCenter.latitude;
+  double _longitude = LocationService.defaultCenter.longitude;
+  bool _locationSet = false; // apakah lokasi sudah dipilih user (bukan default)
 
-  // Category selection (UI labels)
+  bool _gettingLocation = false;
+  bool _isSubmitting = false;
+
   String _selectedCategory = 'Food & Water';
 
   final List<String> _categories = [
-    'Semua',
     'Food & Water',
     'Medical',
     'Education',
@@ -50,44 +62,282 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
 
   final _repository = const DonationRepository();
 
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _goalController.dispose();
+    super.dispose();
+  }
+
+  // ─── Foto ────────────────────────────────────────────────────────────────
+
   Future<void> _pickPhoto(ImageSource source) async {
-    final res = await _picker.pickImage(
-      source: source,
-      imageQuality: 85,
-    );
+    // Minta izin sebelum membuka picker
+    if (source == ImageSource.camera) {
+      final status = await ph.Permission.camera.request();
+      if (!status.isGranted) {
+        if (!mounted) return;
+        _showPermissionDialog(
+          title: 'Izin Kamera Diperlukan',
+          message: 'Izinkan akses kamera untuk mengambil foto bukti.',
+          onOpenSettings: () => ph.openAppSettings(),
+        );
+        return;
+      }
+    } else {
+      // Galeri
+      bool granted = false;
+      final photos = await ph.Permission.photos.request();
+      if (photos.isGranted) {
+        granted = true;
+      } else {
+        final storage = await ph.Permission.storage.request();
+        granted = storage.isGranted;
+      }
+      if (!granted) {
+        if (!mounted) return;
+        _showPermissionDialog(
+          title: 'Izin Galeri Diperlukan',
+          message: 'Izinkan akses galeri foto untuk memilih bukti gambar.',
+          onOpenSettings: () => ph.openAppSettings(),
+        );
+        return;
+      }
+    }
+
+    final res = await _picker.pickImage(source: source, imageQuality: 85);
     if (res == null) return;
+    if (!mounted) return;
     setState(() => _pickedPhoto = res);
   }
 
   Future<String> _photoToDataUrl(XFile file) async {
-    // Backend expects `photo_url`. Without a backend upload service,
-    // we send a data URL as a portable representation.
     final bytes = await File(file.path).readAsBytes();
     final base64Str = base64Encode(bytes);
-    final parts = file.name.split('.');
-    final ext = parts.isNotEmpty ? parts.last : 'jpg';
+    final ext = file.name.split('.').lastOrNull ?? 'jpg';
     final mime = switch (ext.toLowerCase()) {
       'png' => 'image/png',
       'webp' => 'image/webp',
-      'jpeg' || 'jpg' => 'image/jpeg',
       _ => 'image/jpeg',
     };
     return 'data:$mime;base64,$base64Str';
   }
 
+  // ─── Lokasi ──────────────────────────────────────────────────────────────
+
+  Future<void> _useCurrentLocation() async {
+    if (_gettingLocation) return;
+    setState(() => _gettingLocation = true);
+
+    final result = await LocationService.instance.getLocationWithStatus();
+
+    if (!mounted) return;
+    setState(() => _gettingLocation = false);
+
+    switch (result.status) {
+      case LocationStatus.success:
+        setState(() {
+          _latitude = result.position!.latitude;
+          _longitude = result.position!.longitude;
+          _locationSet = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Lokasi berhasil didapatkan!'),
+            backgroundColor: AppColors.primary,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+      case LocationStatus.serviceDisabled:
+        _showLocationActionDialog(
+          title: 'GPS Tidak Aktif',
+          message:
+              'Layanan lokasi (GPS) dinonaktifkan. Aktifkan GPS di pengaturan perangkat Anda, atau pilih lokasi manual di peta.',
+          actions: [
+            _DialogAction(
+              label: 'Buka Pengaturan Lokasi',
+              isPrimary: true,
+              onTap: () => LocationService.instance.openLocationSettings(),
+            ),
+            _DialogAction(
+              label: 'Pilih Manual di Peta',
+              onTap: _openMapPicker,
+            ),
+          ],
+        );
+
+      case LocationStatus.permissionDenied:
+        _showLocationActionDialog(
+          title: 'Izin Lokasi Diperlukan',
+          message:
+              'Aplikasi memerlukan izin lokasi untuk menentukan posisi titik donasi Anda secara otomatis.',
+          actions: [
+            _DialogAction(
+              label: 'Izinkan Akses Lokasi',
+              isPrimary: true,
+              onTap: () => LocationService.instance.getLocationWithStatus(),
+            ),
+            _DialogAction(
+              label: 'Pilih Manual di Peta',
+              onTap: _openMapPicker,
+            ),
+          ],
+        );
+
+      case LocationStatus.permissionDeniedForever:
+        _showLocationActionDialog(
+          title: 'Izin Lokasi Diblokir',
+          message:
+              'Izin lokasi telah diblokir secara permanen. Buka Pengaturan Aplikasi untuk mengaktifkan kembali, atau pilih lokasi manual di peta.',
+          actions: [
+            _DialogAction(
+              label: 'Buka Pengaturan Aplikasi',
+              isPrimary: true,
+              onTap: () => LocationService.instance.openAppSettings(),
+            ),
+            _DialogAction(
+              label: 'Pilih Manual di Peta',
+              onTap: _openMapPicker,
+            ),
+          ],
+        );
+
+      case LocationStatus.pluginUnavailable:
+        // Linux desktop: plugin GPS tidak tersedia
+        _showLocationActionDialog(
+          title: 'GPS Tidak Tersedia',
+          message:
+              'Layanan lokasi tidak tersedia di perangkat ini. Silakan pilih lokasi secara manual di peta.',
+          actions: [
+            _DialogAction(
+              label: 'Pilih di Peta',
+              isPrimary: true,
+              onTap: _openMapPicker,
+            ),
+          ],
+        );
+
+      case LocationStatus.unknown:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            action: SnackBarAction(
+              label: 'Pilih di Peta',
+              onPressed: _openMapPicker,
+            ),
+          ),
+        );
+    }
+  }
+
+  Future<void> _openMapPicker() async {
+    final result = await Navigator.push<LatLng>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(
+          initialPosition: LatLng(_latitude, _longitude),
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _latitude = result.latitude;
+      _longitude = result.longitude;
+      _locationSet = true;
+    });
+  }
+
+  // ─── Dialog helpers ───────────────────────────────────────────────────────
+
+  void _showPermissionDialog({
+    required String title,
+    required String message,
+    required VoidCallback onOpenSettings,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: AppTextStyles.titleMedium),
+        content: Text(message, style: AppTextStyles.bodyMedium),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onOpenSettings();
+            },
+            child: const Text('Buka Pengaturan'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationActionDialog({
+    required String title,
+    required String message,
+    required List<_DialogAction> actions,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.location_off_rounded, color: AppColors.urgencyHigh),
+            const SizedBox(width: 8),
+            Expanded(child: Text(title, style: AppTextStyles.titleMedium)),
+          ],
+        ),
+        content: Text(message, style: AppTextStyles.bodyMedium),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actionsAlignment: MainAxisAlignment.end,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Tutup'),
+          ),
+          ...actions.map(
+            (a) => a.isPrimary
+                ? ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      a.onTap();
+                    },
+                    child: Text(a.label),
+                  )
+                : OutlinedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      a.onTap();
+                    },
+                    child: Text(a.label),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Submit ───────────────────────────────────────────────────────────────
+
   Future<void> _createDonation() async {
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
 
-    if (title.isEmpty || description.isEmpty) {
-      throw Exception('Title and description are required');
+    if (title.isEmpty) throw Exception('Judul titik tidak boleh kosong.');
+    if (description.isEmpty) throw Exception('Deskripsi tidak boleh kosong.');
+    if (_pickedPhoto == null) throw Exception('Foto bukti wajib diunggah.');
+    if (!_locationSet) {
+      throw Exception(
+          'Pilih lokasi terlebih dahulu (gunakan GPS atau pilih di peta).');
     }
 
-    if (_pickedPhoto == null) {
-      throw Exception('Photo Evidence is required');
-    }
-
-    // 1) create donation point
     final created = await _repository.createDonation(
       title: title,
       description: description,
@@ -101,7 +351,6 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
           0.0,
     );
 
-    // 2) upload documentation (photo evidence)
     final dataUrl = await _photoToDataUrl(_pickedPhoto!);
     await _repository.uploadDocumentation(
       pointId: created.id,
@@ -109,6 +358,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
       caption: null,
     );
   }
+
+  // ─── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -151,10 +402,11 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
               ],
             ),
           ),
+          const Divider(height: 1),
           // Form
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -181,7 +433,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: _categories.where((c) => c != 'Semua').map((c) {
+                    children: _categories.map((c) {
                       final isSelected = _selectedCategory == c;
                       return ChoiceChip(
                         label: Text(c),
@@ -220,33 +472,72 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  // Urgency level tidak ditampilkan (default urgent)
-                  const SizedBox(height: 18),
                   // Location
                   _sectionLabel('Location'),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
+                  if (!_locationSet)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Pilih lokasi titik donasi ini menggunakan GPS atau peta.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
                   _locationPicker(),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 28),
                   // Publish button
-                  ElevatedButton.icon(
-                    onPressed: () async {
-                      try {
-                        await _createDonation();
-                        if (!context.mounted) return;
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content: Text('Titik berhasil dibuat!')),
-                        );
-                      } catch (e) {
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Gagal membuat titik: $e')),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.location_on_rounded, size: 18),
-                    label: const Text('Publish Point'),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _isSubmitting
+                          ? null
+                          : () async {
+                              setState(() => _isSubmitting = true);
+                              try {
+                                await _createDonation();
+                                if (!context.mounted) return;
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('✅ Titik berhasil dibuat!'),
+                                    backgroundColor: AppColors.primary,
+                                  ),
+                                );
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                      content:
+                                          Text('Gagal membuat titik: $e')),
+                                );
+                              } finally {
+                                if (mounted) {
+                                  setState(() => _isSubmitting = false);
+                                }
+                              }
+                            },
+                      icon: _isSubmitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.location_on_rounded, size: 18),
+                      label: Text(_isSubmitting ? 'Menyimpan...' : 'Publish Point'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -257,9 +548,9 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
     );
   }
 
+  // ─── Helpers UI ───────────────────────────────────────────────────────────
+
   String _mapCategoryToBackend(String uiValue) {
-    // Map UI label to backend category value.
-    // Backend currently uses strings like: Pangan, Medis, Pendidikan, Infrastruktur, Pakaian.
     return switch (uiValue) {
       'Food & Water' => 'Pangan',
       'Medical' => 'Medis',
@@ -267,104 +558,72 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
       'Infrastructure' => 'Infrastruktur',
       'Clothes' => 'Pakaian',
       'Other' => 'Lainnya',
-      // If someone picks 'Semua', fallback to generic
-      'Semua' => 'Umum',
       _ => 'Umum',
     };
   }
 
-  Widget _sectionLabel(String text) {
-    return Text(text, style: AppTextStyles.titleSmall);
-  }
+  Widget _sectionLabel(String text) =>
+      Text(text, style: AppTextStyles.titleSmall);
 
   Widget _photoUploadBox() {
-    return InkWell(
-      onTap: () => _pickPhoto(ImageSource.gallery),
-      onLongPress: () => _pickPhoto(ImageSource.camera),
-      child: Container(
-        height: 120,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: const Color(0xFFEEF2FF),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: AppColors.border,
-            style: BorderStyle.solid,
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: () => _pickPhoto(ImageSource.gallery),
+            borderRadius: BorderRadius.circular(12),
+            child: _photoTile(
+              icon: Icons.photo_library_outlined,
+              label: 'Galeri',
+            ),
           ),
         ),
-        child: _pickedPhoto == null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.photo_camera_outlined,
-                    size: 32,
-                    color: AppColors.textLight,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap to upload or take a photo',
-                    style: AppTextStyles.bodySmall,
-                  ),
-                ],
-              )
-            : Center(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Photo selected',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-      ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: InkWell(
+            onTap: () => _pickPhoto(ImageSource.camera),
+            borderRadius: BorderRadius.circular(12),
+            child: _photoTile(
+              icon: Icons.photo_camera_outlined,
+              label: 'Kamera',
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _urgencyOption(UrgencyLevel level, String label, Color color) {
-    final isSelected = _selectedUrgency == level;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedUrgency = level),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.08) : Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: isSelected ? color : AppColors.border,
-              width: isSelected ? 1.5 : 1,
+  Widget _photoTile({required IconData icon, required String label}) {
+    final picked = _pickedPhoto != null;
+    return Container(
+      height: 80,
+      decoration: BoxDecoration(
+        color: picked
+            ? AppColors.primary.withOpacity(0.06)
+            : const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: picked ? AppColors.primary : AppColors.border,
+          width: picked ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            picked ? Icons.check_circle_rounded : icon,
+            color: picked ? AppColors.primary : AppColors.textLight,
+            size: 28,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            picked ? 'Dipilih ✓' : label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: picked ? AppColors.primary : AppColors.textSecondary,
+              fontWeight: picked ? FontWeight.w700 : FontWeight.w400,
             ),
           ),
-          child: Column(
-            children: [
-              Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: isSelected ? color : AppColors.textSecondary,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -373,9 +632,9 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Tombol aksi lokasi
         Container(
           width: double.infinity,
-          height: 44,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             color: Colors.white,
@@ -383,49 +642,36 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
           ),
           child: Row(
             children: [
+              // GPS
               Expanded(
                 child: InkWell(
-                  onTap: () async {
-                    try {
-                      final pos =
-                          await LocationService.instance.getCurrentPosition();
-                      if (!context.mounted) return;
-                      if (pos == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content:
-                                Text('Aktifkan GPS untuk menentukan lokasi.'),
-                          ),
-                        );
-                        return;
-                      }
-                      setState(() {
-                        _latitude = pos.latitude;
-                        _longitude = pos.longitude;
-                      });
-                    } catch (_) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Gagal mendapatkan lokasi saat ini.'),
-                        ),
-                      );
-                    }
-                  },
-                  borderRadius: BorderRadius.circular(12),
+                  onTap: _gettingLocation ? null : _useCurrentLocation,
+                  borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(12)),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.my_location_rounded,
-                            size: 18, color: AppColors.primary),
-                        SizedBox(width: 8),
+                      children: [
+                        if (_gettingLocation)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
+                          )
+                        else
+                          const Icon(Icons.my_location_rounded,
+                              size: 18, color: AppColors.primary),
+                        const SizedBox(width: 8),
                         Text(
-                          '📍 Gunakan Lokasi Saya',
-                          style: TextStyle(
+                          _gettingLocation ? 'Mencari...' : '📍 Lokasi Saya',
+                          style: const TextStyle(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w700,
+                            fontSize: 13,
                           ),
                         ),
                       ],
@@ -433,29 +679,15 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   ),
                 ),
               ),
-              Container(width: 1, color: AppColors.divider),
+              Container(width: 1, height: 44, color: AppColors.divider),
+              // Peta
               Expanded(
                 child: InkWell(
-                  onTap: () async {
-                    final result = await Navigator.push<LatLng>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => LocationPickerScreen(
-                          initialPosition: LatLng(_latitude, _longitude),
-                        ),
-                      ),
-                    );
-
-                    if (!context.mounted) return;
-                    if (result == null) return;
-                    setState(() {
-                      _latitude = result.latitude;
-                      _longitude = result.longitude;
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(12),
+                  onTap: _openMapPicker,
+                  borderRadius: const BorderRadius.horizontal(
+                      right: Radius.circular(12)),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: const [
@@ -467,6 +699,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                           style: TextStyle(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w700,
+                            fontSize: 13,
                           ),
                         ),
                       ],
@@ -478,6 +711,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
           ),
         ),
         const SizedBox(height: 12),
+        // Preview
         Container(
           height: 160,
           width: double.infinity,
@@ -495,10 +729,28 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                 ),
               ),
               Center(
-                child: Icon(
-                  Icons.location_on_rounded,
-                  color: AppColors.urgencyHigh,
-                  size: 40,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.location_on_rounded,
+                      color: _locationSet
+                          ? AppColors.urgencyHigh
+                          : AppColors.textLight,
+                      size: 40,
+                    ),
+                    if (!_locationSet)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          'Lokasi belum dipilih',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               Positioned(
@@ -509,15 +761,39 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withOpacity(0.92),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(
+                      color: _locationSet
+                          ? AppColors.primary.withOpacity(0.3)
+                          : AppColors.border,
+                    ),
                   ),
-                  child: Text(
-                    'Koordinat: ${_latitude.toStringAsFixed(5)}, ${_longitude.toStringAsFixed(5)}',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.textSecondary),
-                    textAlign: TextAlign.center,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _locationSet
+                            ? Icons.check_circle_rounded
+                            : Icons.info_outline_rounded,
+                        size: 14,
+                        color: _locationSet
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _locationSet
+                            ? 'Lat: ${_latitude.toStringAsFixed(5)}, Lng: ${_longitude.toStringAsFixed(5)}'
+                            : 'Gunakan GPS atau pilih di peta',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: _locationSet
+                              ? AppColors.textPrimary
+                              : AppColors.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -529,6 +805,18 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
   }
 }
 
+class _DialogAction {
+  final String label;
+  final VoidCallback onTap;
+  final bool isPrimary;
+
+  const _DialogAction({
+    required this.label,
+    required this.onTap,
+    this.isPrimary = false,
+  });
+}
+
 class _GridMapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -537,42 +825,23 @@ class _GridMapPainter extends CustomPainter {
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
 
-    // Roads
     canvas.drawLine(
-      Offset(size.width * 0.2, 0),
-      Offset(size.width * 0.2, size.height),
-      paint,
-    );
+        Offset(size.width * 0.2, 0), Offset(size.width * 0.2, size.height), paint);
     canvas.drawLine(
-      Offset(size.width * 0.6, 0),
-      Offset(size.width * 0.6, size.height),
-      paint,
-    );
+        Offset(size.width * 0.6, 0), Offset(size.width * 0.6, size.height), paint);
     canvas.drawLine(
-      Offset(0, size.height * 0.35),
-      Offset(size.width, size.height * 0.35),
-      paint,
-    );
+        Offset(0, size.height * 0.35), Offset(size.width, size.height * 0.35), paint);
     canvas.drawLine(
-      Offset(0, size.height * 0.7),
-      Offset(size.width, size.height * 0.7),
-      paint,
-    );
+        Offset(0, size.height * 0.7), Offset(size.width, size.height * 0.7), paint);
 
     final yellow = Paint()
       ..color = const Color(0xFFE6C84E)
       ..strokeWidth = 5
       ..style = PaintingStyle.stroke;
     canvas.drawLine(
-      Offset(size.width * 0.4, 0),
-      Offset(size.width * 0.4, size.height),
-      yellow,
-    );
+        Offset(size.width * 0.4, 0), Offset(size.width * 0.4, size.height), yellow);
     canvas.drawLine(
-      Offset(0, size.height * 0.5),
-      Offset(size.width, size.height * 0.5),
-      yellow,
-    );
+        Offset(0, size.height * 0.5), Offset(size.width, size.height * 0.5), yellow);
   }
 
   @override

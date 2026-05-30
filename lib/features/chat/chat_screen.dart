@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/services/supabase_realtime_service.dart';
 import 'data/chat_repository.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -16,6 +17,8 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String contextType;
   final String? otherUserName;
   final String? otherUserAvatar;
+  final String? contextTitle;
+  final String? contextSummary;
 
   const ChatScreen({
     super.key,
@@ -24,6 +27,8 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.contextType = 'post',
     this.otherUserName,
     this.otherUserAvatar,
+    this.contextTitle,
+    this.contextSummary,
   });
 
   @override
@@ -50,6 +55,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   String? _errorMessage;
 
   // For date separators
+  // Polling dinonaktifkan untuk realtime (Supabase Realtime)
   Timer? _pollingTimer;
 
   @override
@@ -136,8 +142,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       await _repo.markAsRead(conversationId: conv.id);
       _scrollToBottom(animated: false);
 
-      // Start polling for new messages every 5 seconds
-      _startPolling();
+      // Subscribe realtime for new messages (Supabase Realtime)
+      // Polling dinonaktifkan.
+      _subscribeRealtime(conv.id);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -146,6 +153,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       });
     }
   }
+
+  void _subscribeRealtime(int conversationId) {
+    // Realtime subscription: append incoming message into UI.
+    // For now, we keep polling-free approach but still rely on backend insert event.
+    final realtime = SupabaseRealtimeService();
+    realtime.subscribeToChatMessages(
+      conversationId: conversationId.toString(),
+      onInsert: (payload) {
+        final newMessage = ChatMessageDto(
+          id: (payload['id'] as num?)?.toInt() ??
+              DateTime.now().millisecondsSinceEpoch,
+          conversationId:
+              (payload['conversation_id'] as num?)?.toInt() ?? conversationId,
+          senderId: payload['sender_id']?.toString() ?? '',
+          body: payload['body']?.toString() ?? '',
+          createdAt: (() {
+            final raw = payload['created_at']?.toString();
+            final parsed = DateTime.tryParse(raw ?? '');
+            if (parsed == null) return DateTime.now();
+            // Normalize to local time so UI jam sesuai waktu perangkat.
+            return parsed.isUtc ? parsed.toLocal() : parsed;
+          })(),
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _messages = [..._messages, newMessage];
+        });
+        _scrollToBottom();
+
+        if (conversationId == _conversationId) {
+          _repo.markAsRead(conversationId: conversationId);
+        }
+      },
+      onError: (err) {
+        // ignore; fallback handled by initial load
+      },
+    );
+  }
+
+  // void _startPolling() {
+  //   _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+  //     if (_conversationId == null || !mounted) return;
+  //     try {
+  //       final msgs = await _repo.listMessages(
+  //         conversationId: _conversationId!,
+  //         limit: 50,
+  //         before: null,
+  //       );
+  //       if (!mounted) return;
+  //       if (msgs.length != _messages.length ||
+  //           (msgs.isNotEmpty &&
+  //               _messages.isNotEmpty &&
+  //               msgs.last.id != _messages.last.id)) {
+  //         setState(() => _messages = msgs);
+  //         await _repo.markAsRead(conversationId: _conversationId!);
+  //       }
+  //     } catch (_) {}
+  //   });
+  // }
 
   void _startPolling() {
     _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
@@ -351,14 +418,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               ),
             ),
 
+          // Context banner — tampil kalau ada contextTitle (dibuka dari titik)
+          if (widget.contextTitle != null && widget.contextTitle!.isNotEmpty)
+            _ContextBanner(
+              title: widget.contextTitle!,
+              summary: widget.contextSummary,
+            ),
+
           // Messages list
           Expanded(
             child: _loading
                 ? const Center(
                     child: CircularProgressIndicator(color: AppColors.primary))
                 : _errorMessage != null
-                    ? _ErrorView(
-                        error: _errorMessage!, onRetry: _init)
+                    ? _ErrorView(error: _errorMessage!, onRetry: _init)
                     : _messages.isEmpty
                         ? _EmptyChat(name: displayName)
                         : _MessagesList(
@@ -380,6 +453,83 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             isTyping: _isTyping,
             sendButtonController: _sendButtonController,
             onSend: _send,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Context Banner (Titik) ───────────────────────────────────────────────────
+
+class _ContextBanner extends StatelessWidget {
+  final String title;
+  final String? summary;
+
+  const _ContextBanner({required this.title, this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        border: Border(
+          bottom: BorderSide(color: AppColors.primary.withOpacity(0.2)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.location_on_rounded,
+                color: AppColors.primary, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.titleSmall.copyWith(
+                    color: AppColors.primary,
+                    fontSize: 13,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (summary != null && summary!.isNotEmpty)
+                  Text(
+                    summary!,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary.withOpacity(0.7),
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              'Konteks',
+              style: AppTextStyles.labelSmall.copyWith(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -411,7 +561,8 @@ class _ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       backgroundColor: AppColors.background,
       elevation: 0,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
+        icon:
+            const Icon(Icons.arrow_back_rounded, color: AppColors.textPrimary),
         onPressed: onBack,
       ),
       titleSpacing: 0,
@@ -475,8 +626,8 @@ class _MessagesList extends StatelessWidget {
     final List<dynamic> items = [];
     DateTime? prevDate;
     for (final msg in messages) {
-      final msgDate = DateTime(
-          msg.createdAt.year, msg.createdAt.month, msg.createdAt.day);
+      final msgDate =
+          DateTime(msg.createdAt.year, msg.createdAt.month, msg.createdAt.day);
       if (prevDate == null || !isSameDay(prevDate, msgDate)) {
         items.add(msgDate); // date separator
       }
@@ -869,7 +1020,8 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.wifi_off_rounded, size: 48, color: AppColors.textSecondary),
+            const Icon(Icons.wifi_off_rounded,
+                size: 48, color: AppColors.textSecondary),
             const SizedBox(height: 12),
             Text('Gagal memuat pesan', style: AppTextStyles.titleSmall),
             const SizedBox(height: 6),

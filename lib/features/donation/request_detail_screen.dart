@@ -11,11 +11,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/supabase_realtime_service.dart';
 
 import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../chat/chat_screen.dart';
+import 'edit_progress_screen.dart';
+import 'departure_review_screen.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -42,6 +45,12 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   int? _selectedScore;
   bool _submittingRating = false;
 
+  // Auto-refresh
+  Timer? _refreshTimer;
+  // Status partisipasi donatur saat ini ('requested', 'accepted', 'completed', null)
+  Map<String, dynamic>? _myParticipation;
+  bool _loadingParticipation = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +58,64 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     _detailFuture = _repo.getById(widget.request.id);
     _docsFuture = _repo.getDocumentation(widget.request.id);
     _ratingsFuture = _repo.getRatings(widget.request.id);
+    _loadMyParticipation();
+
+    // Auto-refresh setiap 15 detik
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) return;
+      _refreshAll();
+    });
+
+    // Realtime subscription untuk notifikasi participants
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _subscribeRealtime();
+    });
+  }
+
+  void _subscribeRealtime() {
+    // Subscribe ke perubahan titik via Supabase realtime
+    // Ketika ada update di donation_points (progress, status), auto-refresh
+    final realtime = SupabaseRealtimeService();
+    // Gunakan subscription notification sebagai trigger refresh
+    final userId = ref.read(authProvider).user?.id ?? '';
+    if (userId.isEmpty) return;
+    realtime.subscribeToNotifications(
+      currentUserId: userId,
+      onInsert: (payload) {
+        final pointId = payload['payload']?['point_id']?.toString();
+        if (pointId == widget.request.id) {
+          _refreshAll();
+        }
+      },
+    );
+  }
+
+  void _refreshAll() {
+    if (!mounted) return;
+    setState(() {
+      _detailFuture = _repo.getById(widget.request.id);
+      _docsFuture = _repo.getDocumentation(widget.request.id);
+    });
+    _loadMyParticipation();
+  }
+
+  Future<void> _loadMyParticipation() async {
+    final currentUser = ref.read(authProvider).user;
+    if (currentUser == null || currentUser.role.toLowerCase() != 'donatur') {
+      return;
+    }
+    setState(() => _loadingParticipation = true);
+    try {
+      final p = await _repo.getMyParticipation(widget.request.id);
+      if (mounted) setState(() => _myParticipation = p);
+    } catch (_) {}
+    if (mounted) setState(() => _loadingParticipation = false);
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   LatLng get _reqLatLng =>
@@ -712,10 +779,39 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     final isOwner = currentUser != null &&
         (currentUser.id == request.createdById || currentUser.isAdmin);
     final isDonatur = currentUser?.role.toLowerCase() == 'donatur';
-    final isOpen = request.status == RequestStatus.open;
+
+    final participationState = _myParticipation?['state']?.toString();
+    final hasRequested = participationState == 'requested';
+    final hasAccepted = participationState == 'accepted';
+    final hasCompleted = participationState == 'completed';
 
     return Column(
       children: [
+        // Edit Progress — hanya untuk owner, di atas navigasi
+        if (isOwner) ...[
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditProgressScreen(request: request),
+                  ),
+                );
+                if (result == true && mounted) {
+                  setState(() {
+                    _detailFuture = _repo.getById(widget.request.id);
+                  });
+                }
+              },
+              icon: const Icon(Icons.edit_rounded, size: 18),
+              label: const Text('Edit Progress'),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+
         // Navigasi ke Lokasi
         SizedBox(
           width: double.infinity,
@@ -726,91 +822,232 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           ),
         ),
 
-        // Requirement baru:
-        // - Donatur menekan 'Berangkat' hanya memberikan sinyal ke komunitas.
-        // - Komunitas menekan 'Accept & Selesai' untuk menerima donatur & menandai donasi selesai.
-        // Catatan: FE hanya dapat memanggil endpoint yang ada.
-
-        // Tombol Berangkat untuk donatur
-        if (isDonatur && isOpen) ...[
+        // ── DONATUR ─────────────────────────────────────────────────────
+        if (isDonatur) ...[
           const SizedBox(height: 10),
+          if (hasCompleted) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.statusCompleted.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppColors.statusCompleted.withOpacity(0.4)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      color: AppColors.statusCompleted, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Donasi Selesai — Poin diberikan!',
+                    style: AppTextStyles.titleSmall
+                        .copyWith(color: AppColors.statusCompleted),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (hasRequested) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppColors.statusProgress.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppColors.statusProgress.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: AppColors.statusProgress,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Menunggu konfirmasi komunitas...',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.statusProgress,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      try {
+                        await _repo.cancelDeparture(request.id);
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Keberangkatan dibatalkan.')),
+                        );
+                        await _loadMyParticipation();
+                        setState(() {
+                          _detailFuture = _repo.getById(widget.request.id);
+                        });
+                      } catch (e) {
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal membatalkan: $e')),
+                        );
+                      }
+                    },
+                    child: const Text('Batalkan',
+                        style: TextStyle(color: AppColors.urgencyHigh)),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (hasAccepted) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_rounded, color: AppColors.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Diterima! Sedang On Progress',
+                      style: AppTextStyles.titleSmall
+                          .copyWith(color: AppColors.primary)),
+                ],
+              ),
+            ),
+          ] else if (request.status == RequestStatus.open ||
+              request.status == RequestStatus.onProgress) ...[
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _loadingParticipation
+                    ? null
+                    : () async {
+                        try {
+                          final pos = await LocationService.instance
+                              .getCurrentPosition();
+                          await _repo.sendDeparture(
+                            pointId: request.id,
+                            userLat: pos?.latitude,
+                            userLng: pos?.longitude,
+                          );
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text(
+                                    "Sinyal 'Berangkat' terkirim! Menunggu konfirmasi komunitas.")),
+                          );
+                          await _loadMyParticipation();
+                          setState(() {
+                            _detailFuture = _repo.getById(widget.request.id);
+                          });
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Gagal Berangkat: $e')),
+                          );
+                        }
+                      },
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('Berangkat'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.statusProgress,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ],
+
+        // ── OWNER ────────────────────────────────────────────────────────
+        // NOTE: Tombol "Tindak Lanjut Donatur" tidak tampil kalau status request
+        // tidak persis `onProgress`. Untuk owner, tampilkan saat proses sudah mulai
+        // (onProgress) dan juga saat backend masih bertahan di `accepted`/varian.
+        // Sesuaikan bila bisnis Anda punya state lain.
+        if (isOwner &&
+            (request.status == RequestStatus.onProgress ||
+                request.status == RequestStatus.open)) ...[
+          const SizedBox(height: 10),
+
+          // Sama pattern seperti "Edit Progress": Navigator.push<bool> + refresh saat return true
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _updateStatus(RequestStatus.onProgress),
-              icon: const Icon(Icons.play_arrow_rounded, size: 18),
-              label: const Text('Berangkat'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.statusProgress,
-                foregroundColor: Colors.white,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DepartureReviewScreen(
+                      pointId: request.id,
+                      pointTitle: request.title,
+                    ),
+                  ),
+                );
+
+                if (result == true && mounted) {
+                  setState(() {
+                    _detailFuture = _repo.getById(widget.request.id);
+                  });
+                }
+              },
+              icon: const Icon(Icons.playlist_add_check_rounded, size: 18),
+              label: const Text('Tindak Lanjut Donatur'),
+            ),
+          ),
+
+          const SizedBox(height: 10),
+        ],
+
+        // ── CHAT ─────────────────────────────────────────────────────────
+        if (!isOwner) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  final targetUserId = request.createdById;
+                  final postId = int.tryParse(request.id);
+                  if (targetUserId == null ||
+                      targetUserId.isEmpty ||
+                      postId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text(
+                              'Tidak dapat membuka chat untuk titik ini.')),
+                    );
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        targetUserId: targetUserId,
+                        contextId: postId,
+                        contextType: 'donation_point',
+                        contextTitle: request.title,
+                        contextSummary:
+                            '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"}',
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                label: const Text('Hubungi Komunitas'),
               ),
             ),
           ),
         ],
-
-        // Tombol Accept & selesai untuk komunitas
-        if (isOwner && request.status == RequestStatus.onProgress) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => _updateStatus(RequestStatus.completed),
-              icon: const Icon(Icons.check_circle_rounded, size: 18),
-              label: const Text('Accept & Selesai'),
-            ),
-          ),
-        ],
-
-        // Tombol Update Status untuk owner (Open -> On Progress)
-        if (isOwner && isOpen) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () => _updateStatus(RequestStatus.onProgress),
-              icon: const Icon(Icons.update_rounded, size: 18),
-              label: const Text('Update Status'),
-            ),
-          ),
-        ],
-
-        // Chat
-        Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                final targetUserId = request.createdById;
-                final postId = int.tryParse(request.id);
-                if (targetUserId == null ||
-                    targetUserId.isEmpty ||
-                    postId == null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content:
-                            Text('Tidak dapat membuka chat untuk titik ini.')),
-                  );
-                  return;
-                }
-
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChatScreen(
-                      targetUserId: targetUserId,
-                      contextId: postId,
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-              label: const Text('Hubungi Komunitas'),
-            ),
-          ),
-        ),
-
-        // (Laporkan dipindahkan ke SliverAppBar kanan-atas)
       ],
     );
   }

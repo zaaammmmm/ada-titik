@@ -27,11 +27,11 @@ class _CommunityWriteScreenState extends State<CommunityWriteScreen> {
 
   // Mapping key (backend value) -> label tampilan
   final Map<String, String> _postTypes = {
-    'updateKomunitas'   : 'Update Komunitas',
-    'bantuanDibutuhkan' : 'Bantuan Dibutuhkan',
-    'pertanyaan'        : 'Pertanyaan / Diskusi',
-    'inspirasi'         : 'Inspirasi',
-    'kisahSukses'       : 'Kisah Sukses',
+    'updateKomunitas': 'Update Komunitas',
+    'bantuanDibutuhkan': 'Bantuan Dibutuhkan',
+    'pertanyaan': 'Pertanyaan / Diskusi',
+    'inspirasi': 'Inspirasi',
+    'kisahSukses': 'Kisah Sukses',
   };
 
   Future<String> _imageToDataUrl(XFile file) async {
@@ -75,10 +75,11 @@ class _CommunityWriteScreenState extends State<CommunityWriteScreen> {
 
     setState(() => _isSubmitting = true);
     try {
-      String? imageUrl;
-      if (_selectedImage != null) {
-        imageUrl = await _imageToDataUrl(_selectedImage!);
-      }
+      // Backend community post hanya menerima `image_url` berupa URL publik.
+      // Di aplikasi ini belum ada endpoint upload untuk mengubah file menjadi URL publik,
+      // jadi saat ini kita tetap mengirim `null` agar post tidak gagal.
+      // (UI feed sudah siap menampilkan jika `image_url` tersedia.)
+      String? imageUrl = null;
 
       await const CommunityRepository().createPost(
         content: content,
@@ -197,7 +198,7 @@ class _CommunityWriteScreenState extends State<CommunityWriteScreen> {
                     borderRadius: BorderRadius.circular(12),
                     child: Image.file(
                       File(_selectedImage!.path),
-                      height: 150,
+                      height: 220,
                       width: double.infinity,
                       fit: BoxFit.cover,
                     ),
