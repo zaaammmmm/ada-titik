@@ -33,8 +33,7 @@ class DepartureReviewScreen extends ConsumerStatefulWidget {
       _DepartureReviewScreenState();
 }
 
-class _DepartureReviewScreenState
-    extends ConsumerState<DepartureReviewScreen> {
+class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
   late final DonationRepository _repo;
 
   bool _loading = true;
@@ -151,10 +150,23 @@ class _DepartureReviewScreenState
 
     setState(() => _processing = true);
     try {
+      // No 2 FIX: saat owner menekan "Tutup Titik",
+      // kita tidak boleh memaksa geo-fence/geo-complete rule.
+      // Backend sekarang memisahkan status "completed" (butuh geo-fencing)
+      // dan "closed" (ditutup manual).
+      //
+      // Jika backend Anda belum menyediakan endpoint "closed",
+      // maka implementasi fallback harus men-set status yang sesuai bisnis.
+      // Backend saat ini tidak menyediakan endpoint "closePoint".
+      // Rule "Completed" memerlukan geo-fencing, sehingga jangan memanggil status yang memicu GPS.
+      // Implementasi sementara: set kembali status request menjadi 'onProgress'
+      // (titik tetap tampil di list karena filter FE akan ditahan pada status aktif).
+      // Jika backend menyediakan endpoint manual close di kemudian hari, ganti implementasi ini.
       await _repo.updateStatus(
         requestId: widget.pointId,
-        status: RequestStatus.completed,
+        status: RequestStatus.onProgress,
       );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -184,16 +196,19 @@ class _DepartureReviewScreenState
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Tindak Lanjut Donatur', style: AppTextStyles.headlineSmall),
+        title:
+            Text('Tindak Lanjut Donatur', style: AppTextStyles.headlineSmall),
         centerTitle: true,
         actions: [
           // Tombol tutup titik di app bar
           TextButton.icon(
             onPressed: _processing ? null : _closePoint,
-            icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.urgencyHigh),
+            icon: const Icon(Icons.close_rounded,
+                size: 18, color: AppColors.urgencyHigh),
             label: const Text(
               'Tutup Titik',
-              style: TextStyle(color: AppColors.urgencyHigh, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: AppColors.urgencyHigh, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -240,7 +255,8 @@ class _DepartureReviewScreenState
                 const SizedBox(height: 6),
                 // Info catatan penting
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.6),
                     borderRadius: BorderRadius.circular(8),
@@ -333,8 +349,8 @@ class _DepartureReviewScreenState
         final donatorId = p['donator_id']?.toString() ?? '';
         final name =
             p['donator_name']?.toString() ?? p['name']?.toString() ?? 'Donatur';
-        final avatar = p['donator_avatar']?.toString() ??
-            p['avatar_url']?.toString();
+        final avatar =
+            p['donator_avatar']?.toString() ?? p['avatar_url']?.toString();
         final createdAt = p['created_at']?.toString() ?? '';
         final isSelected = _selected.contains(donatorId);
 
@@ -357,9 +373,7 @@ class _DepartureReviewScreenState
                   : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: isSelected
-                    ? AppColors.primary
-                    : AppColors.border,
+                color: isSelected ? AppColors.primary : AppColors.border,
                 width: isSelected ? 1.5 : 1,
               ),
             ),
@@ -394,8 +408,8 @@ class _DepartureReviewScreenState
                             const SizedBox(width: 6),
                             Text(
                               _relativeTime(createdAt),
-                              style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.textLight),
+                              style: AppTextStyles.bodySmall
+                                  .copyWith(color: AppColors.textLight),
                             ),
                           ],
                         ],
@@ -411,9 +425,7 @@ class _DepartureReviewScreenState
                         ? Icons.check_circle_rounded
                         : Icons.radio_button_unchecked_rounded,
                     key: ValueKey(isSelected),
-                    color: isSelected
-                        ? AppColors.primary
-                        : AppColors.border,
+                    color: isSelected ? AppColors.primary : AppColors.border,
                     size: 26,
                   ),
                 ),
@@ -445,7 +457,8 @@ class _DepartureReviewScreenState
             // Tampilkan tombol tutup titik juga di empty state
             OutlinedButton.icon(
               onPressed: _processing ? null : _closePoint,
-              icon: const Icon(Icons.close_rounded, color: AppColors.urgencyHigh),
+              icon:
+                  const Icon(Icons.close_rounded, color: AppColors.urgencyHigh),
               label: const Text(
                 'Tutup Titik Bantuan',
                 style: TextStyle(color: AppColors.urgencyHigh),

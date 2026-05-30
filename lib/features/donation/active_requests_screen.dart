@@ -8,6 +8,8 @@ import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 import 'request_detail_screen.dart';
 import '../chat/chat_screen.dart';
+import '../../core/services/location_service.dart';
+import 'dart:math' as math;
 
 class ActiveRequestsScreen extends StatefulWidget {
   const ActiveRequestsScreen({super.key});
@@ -18,6 +20,97 @@ class ActiveRequestsScreen extends StatefulWidget {
 
 class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
   bool _isListView = true;
+
+  Future<List<DonationRequest>> _fetchActiveRequests() async {
+    final category = _selectedFilter == 'Semua' ? null : _selectedFilter;
+    final repo = const DonationRepository();
+
+    // NOTE: jika backend tidak bisa menerima parameter kategori atau status tertentu,
+    // bagian ini harus disesuaikan.
+
+    // Fetch dua status: Open + On Progress
+    final openFuture = repo.getAll(
+      status: RequestStatus.open,
+      category: category,
+    );
+    final onProgressFuture = repo.getAll(
+      status: RequestStatus.onProgress,
+      category: category,
+    );
+
+    final results = await Future.wait([openFuture, onProgressFuture]);
+    final combined = <String, DonationRequest>{};
+
+    for (final list in results) {
+      for (final r in list) {
+        combined[r.id] = r;
+      }
+    }
+
+    // No 4 FIX: bila backend distance_meters kosong/0, hitung jarak di FE.
+    final items = combined.values.toList();
+    final userPos = await LocationService.instance.getCurrentPosition();
+    if (userPos != null) {
+      final userLat = userPos.latitude;
+      final userLng = userPos.longitude;
+
+      for (var i = 0; i < items.length; i++) {
+        final req = items[i];
+        if (req.distanceKm <= 0) {
+          final dMeters = _haversineMeters(
+            userLat,
+            userLng,
+            req.latitude,
+            req.longitude,
+          );
+          items[i] = DonationRequest(
+            id: req.id,
+            title: req.title,
+            description: req.description,
+            authorName: req.authorName,
+            authorAvatar: req.authorAvatar,
+            createdById: req.createdById,
+            urgency: req.urgency,
+            status: req.status,
+            category: req.category,
+            location: req.location,
+            latitude: req.latitude,
+            longitude: req.longitude,
+            timeAgo: req.timeAgo,
+            imageUrl: req.imageUrl,
+            goalAmount: req.goalAmount,
+            collectedAmount: req.collectedAmount,
+            tags: req.tags,
+            goalText: req.goalText,
+            avgRating: req.avgRating,
+            distanceKm: dMeters / 1000.0,
+          );
+        }
+      }
+    }
+
+    return items;
+  }
+
+  double _haversineMeters(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const r = 6371000.0; // earth radius in meters
+    final dLat = _degToRad(lat2 - lat1);
+    final dLon = _degToRad(lon2 - lon1);
+    final a = (math.sin(dLat / 2) * math.sin(dLat / 2)) +
+        math.cos(_degToRad(lat1)) *
+            math.cos(_degToRad(lat2)) *
+            (math.sin(dLon / 2) * math.sin(dLon / 2));
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return r * c;
+  }
+
+  double _degToRad(double deg) => deg * (3.141592653589793 / 180.0);
 
   // ✅ FIXED: label filter sekarang menggunakan nilai backend Bahasa Indonesia
   // Sebelumnya: 'All Types', 'Food & Water', 'Medical', 'Clothes', 'Infra'
@@ -94,12 +187,9 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
           const SizedBox(height: 4),
           Expanded(
             child: FutureBuilder<List<DonationRequest>>(
-              // ✅ FIXED: category dikirim sebagai nilai backend yang benar
-              // 'Semua' -> null (tidak filter), selain itu langsung dikirim
-              future: DonationRepository().getAll(
-                status: RequestStatus.open,
-                category: _selectedFilter == 'Semua' ? null : _selectedFilter,
-              ),
+              // No 1: setelah accept, backend bisa mengubah status dari 'Open' ke 'On Progress'.
+              // Solusi: tampilkan gabungan Open + On Progress.
+              future: _fetchActiveRequests(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

@@ -81,6 +81,7 @@ class _MapsScreenState extends State<MapsScreen> {
       lat: _center.latitude,
       lng: _center.longitude,
       radiusMeters: 5000,
+      statuses: [RequestStatus.open, RequestStatus.onProgress],
     );
   }
 

@@ -326,7 +326,20 @@ class DonationRepository {
     final latitude = toCoord(item['latitude'],
         toCoord(item['lat'], toCoord(item['geo_lat'], -7.7956)));
 
-    final location = item['location']?.toString() ?? 'Lokasi belum tersedia';
+    // No 3 FIX: location jangan langsung fallback ke string default bila
+    // koordinat/field lokasi tidak benar-benar kosong.
+    final rawLocation =
+        item['location']?.toString() ?? item['address']?.toString();
+    final latitudeAvailable = latitude.isFinite;
+    final longitudeAvailable = longitude.isFinite;
+
+    final hasCoords = latitudeAvailable == true && longitudeAvailable == true;
+
+    final location = (rawLocation?.trim().isNotEmpty == true)
+        ? rawLocation!.trim()
+        : (hasCoords
+            ? 'Koordinat: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}'
+            : 'Lokasi belum tersedia');
 
     final _rawTimeAgo = item['time_ago']?.toString() ??
         item['timeAgo']?.toString() ??
@@ -466,14 +479,37 @@ class DonationRepository {
     required double lat,
     required double lng,
     int radiusMeters = 5000,
+    RequestStatus? status,
+    List<RequestStatus>? statuses,
   }) async {
+    if (statuses != null && statuses.isNotEmpty) {
+      final results = await Future.wait(statuses
+          .map((s) => getNearby(
+                lat: lat,
+                lng: lng,
+                radiusMeters: radiusMeters,
+                status: s,
+              ))
+          .toList());
+      final combined = <String, DonationRequest>{};
+      for (final list in results) {
+        for (final item in list) {
+          combined[item.id] = item;
+        }
+      }
+      return combined.values.toList();
+    }
+
+    final query = <String, dynamic>{
+      'lat': lat,
+      'lng': lng,
+      'radius': radiusMeters,
+      if (status != null) 'status': _statusToBackend(status),
+    };
+
     final res = await ApiClient.get<Map<String, dynamic>>(
       '/api/donations/nearby',
-      query: {
-        'lat': lat,
-        'lng': lng,
-        'radius': radiusMeters,
-      },
+      query: query,
     );
 
     final body = res.data;
@@ -708,11 +744,20 @@ class DonationRepository {
       ),
     });
 
-    await ApiClient.post<Map<String, dynamic>>(
+    final res = await ApiClient.post<Map<String, dynamic>>(
       '/api/documentation',
       data: formData,
       options: Options(contentType: 'multipart/form-data'),
     );
+
+    // ✅ Tambahkan error handling untuk upload dokumentasi
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200 && statusCode != 201) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal mengunggah dokumentasi ($statusCode)';
+      throw Exception(msg);
+    }
   }
 
   List<int> _dataUrlToBytes(String dataUrl) {

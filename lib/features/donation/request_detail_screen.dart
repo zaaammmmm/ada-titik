@@ -118,8 +118,8 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     super.dispose();
   }
 
-  LatLng get _reqLatLng =>
-      LatLng(widget.request.latitude, widget.request.longitude);
+  LatLng _latLngFromRequest(DonationRequest request) =>
+      LatLng(request.latitude, request.longitude);
 
   // ✅ FIXED: updateStatus sekarang mengirim koordinat GPS untuk status Completed
   Future<void> _updateStatus(RequestStatus next) async {
@@ -526,7 +526,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         borderRadius: BorderRadius.circular(14),
         child: FlutterMap(
           options: MapOptions(
-            initialCenter: _reqLatLng,
+            initialCenter: _latLngFromRequest(request),
             initialZoom: 15,
             interactionOptions: const InteractionOptions(
               flags: InteractiveFlag.none,
@@ -543,7 +543,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             MarkerLayer(
               markers: [
                 Marker(
-                  point: _reqLatLng,
+                  point: _latLngFromRequest(request),
                   width: 40,
                   height: 40,
                   child: const Icon(
@@ -629,10 +629,13 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   }
 
   Widget _buildRatingsSection(DonationRequest request, UserModel? currentUser) {
-    final isCompleted = request.status == RequestStatus.completed;
-    final canRate = isCompleted &&
-        currentUser != null &&
-        currentUser.role.toLowerCase() == 'donatur';
+    final participationState =
+        _myParticipation?['state']?.toString().toLowerCase();
+    final hasAcceptedParticipant =
+        participationState == 'accepted' || participationState == 'completed';
+    final canRate = currentUser != null &&
+        currentUser.role.toLowerCase() == 'donatur' &&
+        (request.status == RequestStatus.completed || hasAcceptedParticipant);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

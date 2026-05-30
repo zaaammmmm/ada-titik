@@ -275,9 +275,11 @@ class _HomeScreenState extends State<HomeScreen>
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            // Debug: Tampilkan error detail
+            debugPrint('Error loading urgent requests: ${snapshot.error}');
             return Center(
               child: Text(
-                'Failed to load requests',
+                'Gagal memuat kebutuhan mendesak',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -286,14 +288,25 @@ class _HomeScreenState extends State<HomeScreen>
           }
 
           final all = snapshot.data ?? [];
-          final urgent = all.where((r) => r.urgency == UrgencyLevel.urgent);
-          final normal = all.where((r) => r.urgency != UrgencyLevel.urgent);
-          final ordered = [...urgent, ...normal].toList();
+
+          // ✅ Filter prioritas: Urgent terlebih dahulu, kemudian Normal, kemudian Rendah
+          final urgent =
+              all.where((r) => r.urgency == UrgencyLevel.urgent).toList();
+          final normal =
+              all.where((r) => r.urgency == UrgencyLevel.normal).toList();
+          final low = all.where((r) => r.urgency == UrgencyLevel.low).toList();
+
+          // Sort setiap kategori berdasarkan tanggal terbaru (untuk menampilkan komunitas terbaru)
+          urgent.sort((a, b) => b.timeAgo.compareTo(a.timeAgo));
+          normal.sort((a, b) => b.timeAgo.compareTo(a.timeAgo));
+          low.sort((a, b) => b.timeAgo.compareTo(a.timeAgo));
+
+          final ordered = [...urgent, ...normal, ...low].toList();
 
           if (ordered.isEmpty) {
             return Center(
               child: Text(
-                'No active requests',
+                'Belum ada kebutuhan mendesak',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -301,12 +314,18 @@ class _HomeScreenState extends State<HomeScreen>
             );
           }
 
+          debugPrint(
+              'Tampilkan ${ordered.length} kebutuhan (${urgent.length} urgent)');
+
           return ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: ordered.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final req = ordered[index];
+              // Debug: Print image URL untuk verifikasi
+              debugPrint(
+                  'Card ${index}: ${req.title} - Image: ${req.imageUrl}');
               return _UrgentCard(
                 request: req,
                 onTap: () => Navigator.push(
@@ -576,7 +595,7 @@ class _UrgentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // Image - dengan handling lebih baik untuk error dan loading
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(16),
@@ -587,13 +606,7 @@ class _UrgentCard extends StatelessWidget {
                     height: 110,
                     width: double.infinity,
                     color: AppColors.primaryContainer,
-                    child: request.imageUrl != null
-                        ? Image.network(
-                            request.imageUrl!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _placeholderImage(),
-                          )
-                        : _placeholderImage(),
+                    child: _buildImageWidget(),
                   ),
                   if (request.urgency == UrgencyLevel.urgent)
                     Positioned(
@@ -654,6 +667,32 @@ class _UrgentCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  // ✅ Improved image widget dengan better error handling
+  Widget _buildImageWidget() {
+    if (request.imageUrl != null && request.imageUrl!.isNotEmpty) {
+      return Image.network(
+        request.imageUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('Image error for ${request.title}: $error');
+          return _placeholderImage();
+        },
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+      );
+    }
+    return _placeholderImage();
   }
 
   Widget _placeholderImage() {

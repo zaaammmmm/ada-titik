@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/donation/request_detail_screen.dart';
 import '../../features/donation/departure_review_screen.dart';
+import '../../features/donation/data/donation_repository.dart';
+
 import '../../shared/models/models.dart';
 
 import 'data/notification_repository.dart';
@@ -375,32 +377,20 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen>
                         return;
                       }
 
+                      // FE-only deep-link untuk rating/donasi:
+                      // load detail request dari backend supaya section rating donatur
+                      // tampil sesuai status real (mis. RequestStatus.completed).
+                      final requestId = item.pointId!;
+                      final donationRepo = const DonationRepository();
+                      final loaded = await donationRepo.getById(requestId);
+
+                      if (!context.mounted) return;
+
                       Navigator.push(
                         context,
                         MaterialPageRoute(
                           builder: (_) => RequestDetailScreen(
-                            request: DonationRequest(
-                              id: item.pointId!,
-                              title: item.subtitle.isNotEmpty
-                                  ? item.subtitle
-                                  : item.title,
-                              description: '',
-                              authorName: '',
-                              urgency: UrgencyLevel.normal,
-                              status: RequestStatus.open,
-                              category: 'Umum',
-                              location: '',
-                              timeAgo: '',
-                              imageUrl: null,
-                              goalAmount: 0,
-                              collectedAmount: 0,
-                              latitude: -7.7956,
-                              longitude: 110.3695,
-                              distanceKm: 0,
-                              tags: const [],
-                              goalText: null,
-                              avgRating: null,
-                            ),
+                            request: loaded,
                           ),
                         ),
                       );

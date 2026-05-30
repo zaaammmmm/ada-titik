@@ -289,7 +289,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
-            const Icon(Icons.location_off_rounded, color: AppColors.urgencyHigh),
+            const Icon(Icons.location_off_rounded,
+                color: AppColors.urgencyHigh),
             const SizedBox(width: 8),
             Expanded(child: Text(title, style: AppTextStyles.titleMedium)),
           ],
@@ -326,7 +327,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
 
   // ─── Submit ───────────────────────────────────────────────────────────────
 
-  Future<void> _createDonation() async {
+  Future<DonationRequest> _createDonation() async {
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
 
@@ -357,6 +358,11 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
       photoUrl: dataUrl,
       caption: null,
     );
+
+    // ✅ Setelah upload dokumentasi, re-fetch donasi untuk mendapatkan image_url terbaru
+    // Backend akan memproses gambar dan menyimpan URL-nya
+    final updatedDonation = await _repository.getById(created.id);
+    return updatedDonation;
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -480,8 +486,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
                         'Pilih lokasi titik donasi ini menggunakan GPS atau peta.',
-                        style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary),
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textSecondary),
                       ),
                     ),
                   const SizedBox(height: 4),
@@ -510,8 +516,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                      content:
-                                          Text('Gagal membuat titik: $e')),
+                                      content: Text('Gagal membuat titik: $e')),
                                 );
                               } finally {
                                 if (mounted) {
@@ -529,7 +534,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                               ),
                             )
                           : const Icon(Icons.location_on_rounded, size: 18),
-                      label: Text(_isSubmitting ? 'Menyimpan...' : 'Publish Point'),
+                      label: Text(
+                          _isSubmitting ? 'Menyimpan...' : 'Publish Point'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -646,8 +652,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
               Expanded(
                 child: InkWell(
                   onTap: _gettingLocation ? null : _useCurrentLocation,
-                  borderRadius: const BorderRadius.horizontal(
-                      left: Radius.circular(12)),
+                  borderRadius:
+                      const BorderRadius.horizontal(left: Radius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Row(
@@ -684,8 +690,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
               Expanded(
                 child: InkWell(
                   onTap: _openMapPicker,
-                  borderRadius: const BorderRadius.horizontal(
-                      right: Radius.circular(12)),
+                  borderRadius:
+                      const BorderRadius.horizontal(right: Radius.circular(12)),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Row(
@@ -825,23 +831,23 @@ class _GridMapPainter extends CustomPainter {
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
 
-    canvas.drawLine(
-        Offset(size.width * 0.2, 0), Offset(size.width * 0.2, size.height), paint);
-    canvas.drawLine(
-        Offset(size.width * 0.6, 0), Offset(size.width * 0.6, size.height), paint);
-    canvas.drawLine(
-        Offset(0, size.height * 0.35), Offset(size.width, size.height * 0.35), paint);
-    canvas.drawLine(
-        Offset(0, size.height * 0.7), Offset(size.width, size.height * 0.7), paint);
+    canvas.drawLine(Offset(size.width * 0.2, 0),
+        Offset(size.width * 0.2, size.height), paint);
+    canvas.drawLine(Offset(size.width * 0.6, 0),
+        Offset(size.width * 0.6, size.height), paint);
+    canvas.drawLine(Offset(0, size.height * 0.35),
+        Offset(size.width, size.height * 0.35), paint);
+    canvas.drawLine(Offset(0, size.height * 0.7),
+        Offset(size.width, size.height * 0.7), paint);
 
     final yellow = Paint()
       ..color = const Color(0xFFE6C84E)
       ..strokeWidth = 5
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(
-        Offset(size.width * 0.4, 0), Offset(size.width * 0.4, size.height), yellow);
-    canvas.drawLine(
-        Offset(0, size.height * 0.5), Offset(size.width, size.height * 0.5), yellow);
+    canvas.drawLine(Offset(size.width * 0.4, 0),
+        Offset(size.width * 0.4, size.height), yellow);
+    canvas.drawLine(Offset(0, size.height * 0.5),
+        Offset(size.width, size.height * 0.5), yellow);
   }
 
   @override
