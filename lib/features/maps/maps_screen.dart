@@ -13,6 +13,7 @@ import '../donation/data/donation_repository.dart';
 import '../donation/request_detail_screen.dart';
 import '../chat/chat_screen.dart';
 import '../notification/notification_screen.dart';
+import '../notification/data/notification_repository.dart';
 
 class MapsScreen extends StatefulWidget {
   const MapsScreen({super.key});
@@ -24,6 +25,7 @@ class MapsScreen extends StatefulWidget {
 class _MapsScreenState extends State<MapsScreen> {
   late Future<List<DonationRequest>> _nearbyFuture;
   final MapController _mapController = MapController();
+  int _unreadNotifCount = 0;
 
   LatLng _center = LocationService.defaultCenter;
 
@@ -38,8 +40,16 @@ class _MapsScreenState extends State<MapsScreen> {
     super.initState();
 
     _nearbyFuture = _loadNearby();
-
     _initGps();
+    _loadUnreadCount();
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final notifRepo = const NotificationRepository();
+      final notifs = await notifRepo.getUserNotifications(page: 1, limit: 50, unread: true);
+      if (mounted) setState(() => _unreadNotifCount = notifs.length);
+    } catch (_) {}
   }
 
   Future<void> _initGps() async {
@@ -78,6 +88,8 @@ class _MapsScreenState extends State<MapsScreen> {
 
   Future<List<DonationRequest>> _loadNearby() async {
     final repo = DonationRepository();
+    // Fix 13: Tampilkan semua titik aktif (open + onProgress) - titik yang 
+    // sudah di-accept (status onProgress) tetap tampil sampai benar-benar selesai
     return repo.getNearby(
       lat: _center.latitude,
       lng: _center.longitude,
@@ -93,13 +105,15 @@ class _MapsScreenState extends State<MapsScreen> {
       appBar: AdaTitikAppBar(
         title: 'Maps',
         showAvatar: false,
-        onNotification: () {
-          Navigator.push(
+        unreadNotifCount: _unreadNotifCount,
+        onNotification: () async {
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => const NotificationScreen(),
             ),
           );
+          _loadUnreadCount();
         },
       ),
       body: Stack(

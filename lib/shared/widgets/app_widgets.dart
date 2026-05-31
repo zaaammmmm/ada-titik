@@ -273,12 +273,14 @@ class AdaTitikAppBar extends StatelessWidget implements PreferredSizeWidget {
   final bool showAvatar;
   final String title;
   final VoidCallback? onNotification;
+  final int unreadNotifCount;
 
   const AdaTitikAppBar({
     super.key,
     this.showAvatar = true,
     this.title = 'Ada Titik?',
     this.onNotification,
+    this.unreadNotifCount = 0,
   });
 
   @override
@@ -304,24 +306,39 @@ class AdaTitikAppBar extends StatelessWidget implements PreferredSizeWidget {
         IconButton(
           onPressed: onNotification,
           icon: Stack(
+            clipBehavior: Clip.none,
             children: [
               Icon(
-                Icons.notifications_outlined,
+                unreadNotifCount > 0
+                    ? Icons.notifications_rounded
+                    : Icons.notifications_outlined,
                 color: AppColors.textPrimary,
                 size: 26,
               ),
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: AppColors.urgencyHigh,
-                    shape: BoxShape.circle,
+              if (unreadNotifCount > 0)
+                Positioned(
+                  right: -4,
+                  top: -4,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: AppColors.urgencyHigh,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      unreadNotifCount > 99 ? '99+' : unreadNotifCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),

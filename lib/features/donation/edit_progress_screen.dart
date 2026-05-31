@@ -47,8 +47,7 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
 
   Future<void> _save() async {
     final goalText = _goalController.text.trim().replaceAll('.', '');
-    final collectedText =
-        _collectedController.text.trim().replaceAll('.', '');
+    final collectedText = _collectedController.text.trim().replaceAll('.', '');
 
     final goal = double.tryParse(goalText);
     final collected = double.tryParse(collectedText);
@@ -109,12 +108,11 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final goal = double.tryParse(
-            _goalController.text.replaceAll('.', '')) ??
+    final goal = double.tryParse(_goalController.text.replaceAll('.', '')) ??
         widget.request.goalAmount;
-    final collected = double.tryParse(
-            _collectedController.text.replaceAll('.', '')) ??
-        widget.request.collectedAmount;
+    final collected =
+        double.tryParse(_collectedController.text.replaceAll('.', '')) ??
+            widget.request.collectedAmount;
 
     final progress = goal > 0 ? (collected / goal).clamp(0.0, 1.0) : 0.0;
     final pct = (progress * 100).toStringAsFixed(0);
@@ -165,7 +163,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
             const SizedBox(height: 20),
 
             // Progress preview
-            _buildProgressPreview(progress, pct, collected, goal, urgencyPreview),
+            _buildProgressPreview(
+                progress, pct, collected, goal, urgencyPreview),
             const SizedBox(height: 24),
 
             // Form
@@ -182,8 +181,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
             ),
             const SizedBox(height: 16),
@@ -201,8 +200,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
             ),
             const SizedBox(height: 8),
@@ -334,8 +333,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
               ),
               Text(
                 '$pct%',
-                style: AppTextStyles.titleSmall
-                    .copyWith(color: AppColors.primary),
+                style:
+                    AppTextStyles.titleSmall.copyWith(color: AppColors.primary),
               ),
             ],
           ),

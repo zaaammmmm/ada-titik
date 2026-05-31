@@ -1,20 +1,64 @@
+// lib/core/services/supabase_realtime_service.dart
+//
+// PERUBAHAN dari versi sebelumnya:
+// - Tambah subscribeToCommunityPosts() sesuai migration_v6.sql:
+//   community_posts dan donation_points sudah masuk supabase_realtime publication
+//   + RLS SELECT publik (USING true).
+// - subscribeToDonationPoints() tetap ada, dipindah ke bawah dengan channel name
+//   yang lebih eksplisit.
+
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'notification_service.dart';
 
-/// Supabase realtime integration for Flutter.
-///
-/// Implements realtime subscription to `chat_messages` using Supabase Realtime.
 class SupabaseRealtimeService {
   SupabaseRealtimeService();
 
   StreamSubscription<dynamic>? _sub;
   RealtimeChannel? _channel;
-
-  /// Subscribe ke perubahan donation_points (insert/update).
-  /// Callback dipanggil tanpa argumen — caller cukup refresh state-nya.
   RealtimeChannel? _donationChannel;
+  RealtimeChannel? _communityChannel; // ✅ NEW: community_posts realtime
+
+  // ─── Community Posts ──────────────────────────────────────────────────────
+  //
+  // Migration v6: community_posts ditambahkan ke supabase_realtime publication
+  // + RLS policy: community_posts_public_read (USING true) → siapa pun bisa subscribe.
+  //
+  // CATATAN: Payload realtime hanya berisi kolom mentah community_posts.
+  // Untuk author_name, author_avatar, comments_count → re-fetch via GET /api/community/posts.
+
+  Future<void> subscribeToCommunityPosts({
+    required void Function() onInsert,
+  }) async {
+    try {
+      await _communityChannel?.unsubscribe();
+    } catch (_) {}
+
+    final supabase = Supabase.instance.client;
+    _communityChannel = supabase.channel('community_posts_feed');
+
+    _communityChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'community_posts',
+          callback: (_) => onInsert(),
+        )
+        .subscribe();
+  }
+
+  Future<void> unsubscribeFromCommunityPosts() async {
+    try {
+      await _communityChannel?.unsubscribe();
+    } catch (_) {}
+    _communityChannel = null;
+  }
+
+  // ─── Donation Points ──────────────────────────────────────────────────────
+  //
+  // Migration v6: donation_points juga ditambahkan ke supabase_realtime publication
+  // + RLS policy: donation_points_public_read (USING deleted_at IS NULL).
 
   Future<void> subscribeToDonationPoints({
     required void Function() onUpdate,
@@ -42,9 +86,15 @@ class SupabaseRealtimeService {
         .subscribe();
   }
 
-  /// Subscribe to realtime inserts for chat messages.
-  ///
-  /// Contract (backend): conversationId is an integer column named `conversation_id`.
+  Future<void> unsubscribeFromDonationPoints() async {
+    try {
+      await _donationChannel?.unsubscribe();
+    } catch (_) {}
+    _donationChannel = null;
+  }
+
+  // ─── Chat Messages ────────────────────────────────────────────────────────
+
   Future<void> subscribeToChatMessages({
     required String conversationId,
     required void Function(Map<String, dynamic> payload) onInsert,
@@ -81,14 +131,10 @@ class SupabaseRealtimeService {
           },
         )
         .subscribe();
-
-    // _channel!.subscribe();
   }
 
-  /// Subscribe to realtime updates for chat conversations.
-  ///
-  /// Contract (backend): table `chat_conversations` has RLS so client only
-  /// receives rows they are allowed to see.
+  // ─── Chat Conversations ───────────────────────────────────────────────────
+
   Future<void> subscribeToChatConversations({
     required String currentUserId,
     required void Function(Map<String, dynamic> payload) onUpsert,
@@ -97,9 +143,6 @@ class SupabaseRealtimeService {
     await dispose();
 
     final supabase = Supabase.instance.client;
-
-    // Can't rely on Postgres filter because `chat_conversations` likely has
-    // two participant columns. RLS will enforce visibility.
     final channelName = 'chat_conversations:$currentUserId';
     _channel = supabase.channel(channelName);
 
@@ -110,9 +153,7 @@ class SupabaseRealtimeService {
           table: 'chat_conversations',
           callback: (payload) {
             final record = payload.newRecord;
-            if (record is Map<String, dynamic>) {
-              onUpsert(record);
-            }
+            if (record is Map<String, dynamic>) onUpsert(record);
           },
         )
         .onPostgresChanges(
@@ -121,17 +162,14 @@ class SupabaseRealtimeService {
           table: 'chat_conversations',
           callback: (payload) {
             final record = payload.newRecord;
-            if (record is Map<String, dynamic>) {
-              onUpsert(record);
-            }
+            if (record is Map<String, dynamic>) onUpsert(record);
           },
         )
         .subscribe();
-
-    // _channel!.subscribe();
   }
 
-  /// Subscribe to realtime inserts for notifications.
+  // ─── Notifications ────────────────────────────────────────────────────────
+
   Future<void> subscribeToNotifications({
     required String currentUserId,
     required void Function(Map<String, dynamic> payload) onInsert,
@@ -140,7 +178,6 @@ class SupabaseRealtimeService {
     await dispose();
 
     final supabase = Supabase.instance.client;
-
     final channelName = 'notifications:$currentUserId';
     _channel = supabase.channel(channelName);
 
@@ -157,18 +194,14 @@ class SupabaseRealtimeService {
           callback: (payload) {
             final record = payload.newRecord;
             if (record is Map<String, dynamic>) {
-              // Tampilkan local notification heads-up saat event realtime masuk
               _showLocalNotification(record);
               onInsert(record);
             }
           },
         )
         .subscribe();
-
-    // _channel!.subscribe();
   }
 
-  /// Tampilkan local notification untuk event notifikasi dari backend.
   void _showLocalNotification(Map<String, dynamic> record) {
     try {
       final title = record['title']?.toString() ?? 'Ada Titik!';
@@ -182,22 +215,26 @@ class SupabaseRealtimeService {
         body: body,
         payload: 'notification:$id',
       );
-    } catch (_) {
-      // Jangan crash jika notifikasi gagal
-    }
+    } catch (_) {}
   }
+
+  // ─── Dispose ──────────────────────────────────────────────────────────────
 
   Future<void> dispose() async {
     try {
       await _sub?.cancel();
     } catch (_) {}
-
     _sub = null;
 
     try {
       await _channel?.unsubscribe();
     } catch (_) {}
-
     _channel = null;
+  }
+
+  Future<void> disposeAll() async {
+    await dispose();
+    await unsubscribeFromDonationPoints();
+    await unsubscribeFromCommunityPosts();
   }
 }

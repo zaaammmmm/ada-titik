@@ -46,9 +46,9 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
         combined[r.id] = r;
       }
     }
+// No 4 FIX: bila backend distance_meters kosong/0, hitung jarak di FE.
+    var items = combined.values.toList();
 
-    // No 4 FIX: bila backend distance_meters kosong/0, hitung jarak di FE.
-    final items = combined.values.toList();
     final userPos = await LocationService.instance.getCurrentPosition();
     if (userPos != null) {
       final userLat = userPos.latitude;
@@ -63,6 +63,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
             req.latitude,
             req.longitude,
           );
+
           items[i] = DonationRequest(
             id: req.id,
             title: req.title,
@@ -84,8 +85,23 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
             goalText: req.goalText,
             avgRating: req.avgRating,
             distanceKm: dMeters / 1000.0,
+            goalUnit: req.goalUnit,
           );
         }
+      }
+    }
+
+// Fix 11: Apply urgency filter
+    if (_selectedUrgency != 'Semua') {
+      final targetUrgency = switch (_selectedUrgency) {
+        'Urgent' => UrgencyLevel.urgent,
+        'Normal' => UrgencyLevel.normal,
+        'Rendah' => UrgencyLevel.low,
+        _ => null,
+      };
+
+      if (targetUrgency != null) {
+        items = items.where((r) => r.urgency == targetUrgency).toList();
       }
     }
 
@@ -112,10 +128,8 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
 
   double _degToRad(double deg) => deg * (3.141592653589793 / 180.0);
 
-  // ✅ FIXED: label filter sekarang menggunakan nilai backend Bahasa Indonesia
-  // Sebelumnya: 'All Types', 'Food & Water', 'Medical', 'Clothes', 'Infra'
-  // yang tidak pernah cocok dengan nilai backend: 'Pangan', 'Medis', dst.
   String _selectedFilter = 'Semua';
+  String _selectedUrgency = 'Semua';
   final List<String> _filters = [
     'Semua',
     'Pangan',
@@ -125,6 +139,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
     'Pakaian',
     'Lainnya',
   ];
+  final List<String> _urgencyFilters = ['Semua', 'Urgent', 'Normal', 'Rendah'];
 
   @override
   Widget build(BuildContext context) {
@@ -161,11 +176,12 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                 ),
                 const SizedBox(height: 12),
                 // ✅ FIXED: filter chips menggunakan label Indonesia yang sesuai backend
+                // Category filter
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _filterBtn('≡', 'Filters'),
+                      _filterBtn('≡', 'Kategori'),
                       const SizedBox(width: 8),
                       ..._filters.map(
                         (f) => Padding(
@@ -173,7 +189,32 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                           child: FilterChipWidget(
                             label: f,
                             isSelected: _selectedFilter == f,
-                            onTap: () => setState(() => _selectedFilter = f),
+                            onTap: () => setState(() {
+                              _selectedFilter = f;
+                            }),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Urgency filter
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _filterBtn('🔥', 'Urgensi'),
+                      const SizedBox(width: 8),
+                      ..._urgencyFilters.map(
+                        (u) => Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChipWidget(
+                            label: u,
+                            isSelected: _selectedUrgency == u,
+                            onTap: () => setState(() {
+                              _selectedUrgency = u;
+                            }),
                           ),
                         ),
                       ),
@@ -190,6 +231,8 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
               // No 1: setelah accept, backend bisa mengubah status dari 'Open' ke 'On Progress'.
               // Solusi: tampilkan gabungan Open + On Progress.
               future: _fetchActiveRequests(),
+              // Key ensures rebuild when filters change
+              key: ValueKey('$_selectedFilter-$_selectedUrgency'),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

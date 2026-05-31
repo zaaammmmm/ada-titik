@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/models/models.dart';
 import '../donation/data/donation_repository.dart';
+import '../donation/request_detail_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'me_repository.dart';
 
@@ -73,11 +74,16 @@ class _UserActivityScreenState extends ConsumerState<UserActivityScreen> {
         .take(8)
         .toList();
 
+    // 3) Donation activities (accepted departures) - Fix #9
+    final donationActivities =
+        await _donationRepo.getUserActivity(page: 1, limit: 10);
+
     return _ActivityBundle(
       userName: user?.name,
       userPosts: limitedPosts,
       likedByMe: likedByMe,
       commented: commented,
+      donationActivities: donationActivities,
     );
   }
 
@@ -131,6 +137,33 @@ class _UserActivityScreenState extends ConsumerState<UserActivityScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
                 children: [
                   _SectionHeader(
+                    title: 'Aktivitas Donasi',
+                    icon: Icons.volunteer_activism_rounded,
+                  ),
+                  const SizedBox(height: 10),
+                  if (data.donationActivities.isEmpty)
+                    _EmptyState(message: 'Belum ada aktivitas donasi.')
+                  else
+                    ...data.donationActivities.map((a) => _DonationActivityTile(
+                          activity: a,
+                          onTap: () async {
+                            if (a.pointId == null || a.pointId!.isEmpty) return;
+                            try {
+                              final req =
+                                  await _donationRepo.getById(a.pointId!);
+                              if (!context.mounted) return;
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      RequestDetailScreen(request: req),
+                                ),
+                              );
+                            } catch (_) {}
+                          },
+                        )),
+                  const SizedBox(height: 18),
+                  _SectionHeader(
                     title: 'Postingan Anda',
                     icon: Icons.article_outlined,
                   ),
@@ -178,12 +211,14 @@ class _ActivityBundle {
   final List<FeedPost> userPosts;
   final List<_ActivityLikeItem> likedByMe;
   final List<_ActivityCommentItem> commented;
+  final List<ActivityItem> donationActivities;
 
   const _ActivityBundle({
     required this.userName,
     required this.userPosts,
     required this.likedByMe,
     required this.commented,
+    this.donationActivities = const [],
   });
 }
 
@@ -421,6 +456,73 @@ class _CommentActivityTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DonationActivityTile extends StatelessWidget {
+  final ActivityItem activity;
+  final VoidCallback onTap;
+
+  const _DonationActivityTile({
+    required this.activity,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.volunteer_activism_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    activity.title,
+                    style: AppTextStyles.titleSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    activity.timeAgo,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textSecondary,
+            ),
+          ],
+        ),
       ),
     );
   }

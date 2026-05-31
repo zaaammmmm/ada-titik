@@ -68,6 +68,7 @@ class DonationRequest {
   final List<String> tags;
   final String? goalText;
   final double? avgRating;
+  final String goalUnit; // 'Rp' or 'Kg'
 
   const DonationRequest({
     required this.id,
@@ -90,6 +91,7 @@ class DonationRequest {
     this.tags = const [],
     this.goalText,
     this.avgRating,
+    this.goalUnit = 'Rp',
   });
 }
 
@@ -134,6 +136,7 @@ class ActivityItem {
   final String subtitle;
   final String timeAgo;
   final String iconType; // 'success', 'donation', 'request'
+  final String? pointId; // for deep-link to detail
 
   const ActivityItem({
     required this.id,
@@ -141,6 +144,7 @@ class ActivityItem {
     required this.subtitle,
     required this.timeAgo,
     required this.iconType,
+    this.pointId,
   });
 }
 

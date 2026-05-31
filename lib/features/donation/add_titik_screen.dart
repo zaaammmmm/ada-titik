@@ -26,6 +26,39 @@ import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import 'location_picker_screen.dart';
 
+class _UnitChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+  const _UnitChip({required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : Colors.grey.shade700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AddTitikScreen extends StatefulWidget {
   const AddTitikScreen({super.key});
 
@@ -50,6 +83,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
   bool _isSubmitting = false;
 
   String _selectedCategory = 'Food & Water';
+  String _goalUnit = 'Rp'; // 'Rp' or 'Kg' - fix #15
 
   final List<String> _categories = [
     'Food & Water',
@@ -350,6 +384,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
             _goalController.text.trim().replaceAll('.', '').replaceAll(',', ''),
           ) ??
           0.0,
+      goalUnit: _goalUnit,
     );
 
     final dataUrl = await _photoToDataUrl(_pickedPhoto!);
@@ -453,12 +488,32 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   ),
                   const SizedBox(height: 14),
                   // Goals
-                  _sectionLabel('Goals'),
+                  _sectionLabel('Goals / Target'),
+                  const SizedBox(height: 8),
+                  // Unit selector (Rp / Kg)
+                  Row(
+                    children: [
+                      _UnitChip(
+                        label: 'Rp (Rupiah)',
+                        isSelected: _goalUnit == 'Rp',
+                        onTap: () => setState(() => _goalUnit = 'Rp'),
+                      ),
+                      const SizedBox(width: 8),
+                      _UnitChip(
+                        label: 'Kg (Kilogram)',
+                        isSelected: _goalUnit == 'Kg',
+                        onTap: () => setState(() => _goalUnit = 'Kg'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _goalController,
-                    decoration: const InputDecoration(
-                      hintText: 'e.g., 10Kg',
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      hintText: _goalUnit == 'Rp' ? 'e.g., 5000000' : 'e.g., 50',
+                      prefixText: _goalUnit == 'Rp' ? 'Rp ' : null,
+                      suffixText: _goalUnit == 'Kg' ? ' Kg' : null,
                       filled: true,
                       fillColor: Colors.white,
                     ),

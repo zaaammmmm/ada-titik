@@ -340,8 +340,6 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                     const SizedBox(height: 16),
                     _buildProgressCard(request),
                     const SizedBox(height: 16),
-                    _buildMapCard(request),
-                    const SizedBox(height: 16),
                     _buildDocsSection(request, currentUser),
                     const SizedBox(height: 16),
                     _buildRatingsSection(request, currentUser),
@@ -410,8 +408,6 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             _categoryChip(request.category),
           ],
         ),
-        const SizedBox(height: 10),
-        Text(request.title, style: AppTextStyles.headlineMedium),
         const SizedBox(height: 12),
         // Enhanced Author Section with Role
         Container(
@@ -468,6 +464,8 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 10),
+        Text(request.title, style: AppTextStyles.headlineMedium),
         const SizedBox(height: 12),
         Text(
           request.description,
@@ -539,7 +537,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Target: Rp ${_formatNumber(goal)}',
+            'Target: ${request.goalUnit == 'Kg' ? '${_formatNumber(goal)} Kg' : 'Rp ${_formatNumber(goal)}'}',
             style: AppTextStyles.bodySmall
                 .copyWith(color: AppColors.textSecondary),
           ),
@@ -562,119 +560,6 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     );
   }
 
-  Widget _buildMapCard(DonationRequest request) {
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: FlutterMap(
-          options: MapOptions(
-            initialCenter: _latLngFromRequest(request),
-            initialZoom: 15,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.none,
-            ),
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              // Batasi pemakaian agar tidak terlalu banyak request tile
-              userAgentPackageName: 'com.adatitik.app',
-              minZoom: 3,
-              maxZoom: 17,
-            ),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: _latLngFromRequest(request),
-                  width: 40,
-                  height: 40,
-                  child: const Icon(
-                    Icons.location_on_rounded,
-                    color: AppColors.urgencyHigh,
-                    size: 40,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDocsSection(DonationRequest request, UserModel? currentUser) {
-    // Hanya komunitas yang bisa upload dokumentasi
-    final isKomunitas = currentUser?.role.toLowerCase() == 'komunitas';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Dokumentasi', style: AppTextStyles.titleSmall),
-            if (isKomunitas)
-              TextButton.icon(
-                onPressed: _uploadDoc,
-                icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
-                label: const Text('Tambah'),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        FutureBuilder<List<Map<String, dynamic>>>(
-          future: _docsFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 80,
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            final docs = snapshot.data ?? [];
-            if (docs.isEmpty) {
-              return Text(
-                'Belum ada dokumentasi.',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.textSecondary),
-              );
-            }
-            return SizedBox(
-              height: 100,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: docs.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (context, i) {
-                  final url = docs[i]['photo_url']?.toString() ?? '';
-                  return ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: url,
-                      width: 100,
-                      height: 100,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        width: 100,
-                        color: AppColors.surfaceVariant,
-                        child: const Icon(Icons.broken_image_outlined),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
-      ],
-    );
-  }
-
   Widget _buildRatingsSection(DonationRequest request, UserModel? currentUser) {
     final participationState =
         _myParticipation?['state']?.toString().toLowerCase();
@@ -684,12 +569,16 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         currentUser.role.toLowerCase() == 'donatur' &&
         (request.status == RequestStatus.completed || hasAcceptedParticipant);
 
+    // Cek apakah user sudah pernah memberi rating (jika sudah ada di _ratingsFuture)
+    final alreadyRated = _myParticipation?['has_rated'] == true ||
+        _myParticipation?['rated'] == true;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Rating & Ulasan', style: AppTextStyles.titleSmall),
         const SizedBox(height: 8),
-        if (canRate) ...[
+        if (canRate && !alreadyRated) ...[
           _buildRatingInput(),
           const SizedBox(height: 12),
         ],
@@ -825,6 +714,74 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     );
   }
 
+  Widget _buildDocsSection(DonationRequest request, UserModel? currentUser) {
+    // Hanya komunitas yang bisa upload dokumentasi
+    final isKomunitas = currentUser?.role.toLowerCase() == 'komunitas';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Dokumentasi', style: AppTextStyles.titleSmall),
+            if (isKomunitas)
+              TextButton.icon(
+                onPressed: _uploadDoc,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 16),
+                label: const Text('Tambah'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        FutureBuilder<List<Map<String, dynamic>>>(
+          future: _docsFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            final docs = snapshot.data ?? [];
+            if (docs.isEmpty) {
+              return Text(
+                'Belum ada dokumentasi.',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
+              );
+            }
+            return SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: docs.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final url = docs[i]['photo_url']?.toString() ?? '';
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: CachedNetworkImage(
+                      imageUrl: url,
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => Container(
+                        width: 100,
+                        color: AppColors.surfaceVariant,
+                        child: const Icon(Icons.broken_image_outlined),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildActionButtons(DonationRequest request, UserModel? currentUser) {
     final isOwner = currentUser != null &&
         (currentUser.id == request.createdById || currentUser.isAdmin);
@@ -862,13 +819,121 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           const SizedBox(height: 10),
         ],
 
-        // Navigasi ke Lokasi
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _handleNavigateHere,
-            icon: const Icon(Icons.directions_rounded, size: 18),
-            label: const Text('Navigasi ke Lokasi'),
+        // Map preview yang bisa ditekan untuk navigasi
+        GestureDetector(
+          onTap: _handleNavigateHere,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: Stack(
+              children: [
+                SizedBox(
+                  height: 180,
+                  child: FlutterMap(
+                    options: MapOptions(
+                      initialCenter: _latLngFromRequest(widget.request),
+                      initialZoom: 15,
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.none,
+                      ),
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.adatitik.app',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: _latLngFromRequest(widget.request),
+                            width: 40,
+                            height: 40,
+                            child: const Icon(
+                              Icons.location_on_rounded,
+                              color: AppColors.urgencyHigh,
+                              size: 40,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                // Overlay tombol navigasi
+                Positioned(
+                  bottom: 10,
+                  right: 10,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(30),
+                    color: AppColors.primary,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(30),
+                      onTap: _handleNavigateHere,
+                      child: const Padding(
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.navigation_rounded,
+                                color: Colors.white, size: 16),
+                            SizedBox(width: 6),
+                            Text(
+                              'Buka di Maps',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Ikon "tap to navigate" di pojok kiri atas
+                // Positioned(
+                //   top: 10,
+                //   left: 10,
+                //   child: Container(
+                //     padding:
+                //         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                //     decoration: BoxDecoration(
+                //       color: Colors.white.withOpacity(0.9),
+                //       borderRadius: BorderRadius.circular(8),
+                //     ),
+                //     child: const Row(
+                //       mainAxisSize: MainAxisSize.min,
+                //       children: [
+                //         Icon(Icons.touch_app_rounded,
+                //             size: 13, color: AppColors.primary),
+                //         SizedBox(width: 4),
+                //         Text(
+                //           'Tap untuk navigasi',
+                //           style: TextStyle(
+                //               fontSize: 11,
+                //               color: AppColors.primary,
+                //               fontWeight: FontWeight.w600),
+                //         ),
+                //       ],
+                //     ),
+                //   ),
+                // ),
+              ],
+            ),
           ),
         ),
 
@@ -1067,14 +1132,14 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
               child: OutlinedButton.icon(
                 onPressed: () {
                   final targetUserId = request.createdById;
-                  final postId = int.tryParse(request.id);
-                  if (targetUserId == null ||
-                      targetUserId.isEmpty ||
-                      postId == null) {
+                  // contextId bisa string UUID atau numeric — coba parse, fallback ke hash
+                  final contextIdInt =
+                      int.tryParse(request.id) ?? request.id.hashCode.abs();
+                  if (targetUserId == null || targetUserId.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                           content: Text(
-                              'Tidak dapat membuka chat untuk titik ini.')),
+                              'Tidak dapat membuka chat: pemilik titik tidak dikenal.')),
                     );
                     return;
                   }
@@ -1083,11 +1148,14 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                     MaterialPageRoute(
                       builder: (_) => ChatScreen(
                         targetUserId: targetUserId,
-                        contextId: postId,
+                        contextId: contextIdInt,
                         contextType: 'donation_point',
                         contextTitle: request.title,
                         contextSummary:
-                            '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"}',
+                            '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"} · Target: ${request.goalUnit == 'Kg' ? '${request.goalAmount.toStringAsFixed(0)} Kg' : 'Rp ${request.goalAmount.toStringAsFixed(0)}'}',
+                        initialMessage: '📍 *${request.title}*\n'
+                            'Kategori: ${request.category}\n'
+                            'Lokasi: ${request.location.isNotEmpty ? request.location : "Lihat peta"}',
                       ),
                     ),
                   );

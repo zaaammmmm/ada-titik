@@ -1,3 +1,9 @@
+// lib/core/router/app_router.dart
+//
+// PERUBAHAN dari versi sebelumnya:
+// - Tambah route /reset-password (ResetPasswordScreen)
+//   Menerima optional extra: String? (token dari ForgetPasswordScreen)
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -6,6 +12,7 @@ import '../../features/auth/forget_password_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/auth/onboarding_screen.dart';
+import '../../features/auth/reset_password_screen.dart'; // ✅ NEW
 import '../../features/auth/terms_and_conditions_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../shared/widgets/main_scaffold.dart';
@@ -14,7 +21,6 @@ import '../providers/auth_provider.dart';
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
-    // redirect will be re-evaluated when navigation happens.
     redirect: (context, state) {
       final auth = ref.read(authProvider);
 
@@ -22,12 +28,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isLoginRoute = state.matchedLocation == '/login';
 
       if (!authed) {
-        // Let splash bootstrap auth.
         if (state.matchedLocation == '/' ||
             state.matchedLocation == '/splash') {
           return null;
         }
-        return isLoginRoute ? null : '/login';
+        // Halaman auth yang boleh diakses tanpa login
+        final publicRoutes = [
+          '/login',
+          '/register',
+          '/forget-password',
+          '/reset-password',
+          '/onboarding',
+          '/terms',
+        ];
+        if (publicRoutes.contains(state.matchedLocation)) return null;
+        return '/login';
       }
 
       // Authed
@@ -57,6 +72,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/forget-password',
         builder: (context, state) => const ForgetPasswordScreen(),
+      ),
+      // ✅ NEW: Route reset password
+      // extra: String? → token plaintext (dari dev_reset_token atau null)
+      GoRoute(
+        path: '/reset-password',
+        builder: (context, state) {
+          final token = state.extra as String?;
+          return ResetPasswordScreen(initialToken: token);
+        },
       ),
       GoRoute(
         path: '/terms',

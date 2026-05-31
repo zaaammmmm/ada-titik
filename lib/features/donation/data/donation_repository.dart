@@ -240,12 +240,17 @@ class DonationRepository {
         item['event']?.toString();
     final status = item['status']?.toString() ?? '';
 
+    final activityPointId = item['point_id']?.toString() ??
+        item['pointId']?.toString() ??
+        item['donation_point_id']?.toString();
+
     return ActivityItem(
       id: item['id']?.toString() ?? item['activity_id']?.toString() ?? title,
       title: title,
       subtitle: subtitle,
       timeAgo: timeAgo,
       iconType: _activityIconType(type, status, title, subtitle),
+      pointId: activityPointId,
     );
   }
 
@@ -381,6 +386,8 @@ class DonationRepository {
     final goalText =
         item['goal_text']?.toString() ?? item['goalText']?.toString();
 
+    final goalUnit = item['goal_unit']?.toString() ?? 'Rp';
+
     // final distanceMeters = _parseDouble(
     //   item['distance_meters'] ?? item['distance'],
     //   0,
@@ -419,6 +426,7 @@ class DonationRepository {
       tags: tags,
       goalText: goalText,
       avgRating: avgRating,
+      goalUnit: goalUnit,
     );
   }
 
@@ -601,6 +609,7 @@ class DonationRepository {
     UrgencyLevel urgency = UrgencyLevel.normal,
     String? category,
     double goalAmount = 0,
+    String goalUnit = 'Rp',
   }) async {
     final res = await ApiClient.post<Map<String, dynamic>>(
       '/api/donations',
@@ -611,7 +620,8 @@ class DonationRepository {
         'longitude': longitude,
         'urgency': _urgencyToBackend(urgency),
         if (category != null) 'category': category,
-        'goal_amount': goalAmount, // ✅ sebelumnya tidak dikirim sama sekali
+        'goal_amount': goalAmount,
+        'goal_unit': goalUnit,
       },
     );
 

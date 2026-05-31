@@ -170,4 +170,20 @@ class CommunityRepository {
       },
     );
   }
+
+  // ─── GET /api/community/posts/:id ─────────────────────────────────────
+  Future<FeedPost> getPostById(String postId) async {
+    final res = await ApiClient.get<Map<String, dynamic>>(
+      '/api/community/posts/$postId',
+    );
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode != 200) {
+      throw Exception('Gagal memuat postingan ($statusCode)');
+    }
+    final data = res.data?['data'];
+    if (data is Map<String, dynamic>) {
+      return _mapPost(data);
+    }
+    throw StateError('Unexpected response format for post detail');
+  }
 }

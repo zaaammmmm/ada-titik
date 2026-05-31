@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/donation/request_detail_screen.dart';
 import '../../features/donation/departure_review_screen.dart';
+import '../../features/community/comments_screen.dart';
+import '../../features/community/data/community_repository.dart';
 import '../../features/donation/data/donation_repository.dart';
 
 import '../../shared/models/models.dart';
@@ -398,11 +400,28 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen>
                     }
 
                     if (item.postId != null && item.postId!.isNotEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Detail postingan belum tersedia.'),
-                        ),
-                      );
+                      // Navigate to community post detail
+                      if (!context.mounted) return;
+                      final communityRepo = const CommunityRepository();
+                      try {
+                        final post = await communityRepo.getPostById(item.postId!);
+                        if (!context.mounted) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CommentsScreen(postId: item.postId!),
+                          ),
+                        );
+                      } catch (_) {
+                        if (!context.mounted) return;
+                        // Fallback: buka community tab dengan post id
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CommentsScreen(postId: item.postId!),
+                          ),
+                        );
+                      }
                     }
                   },
                   child: _buildNotifItem(

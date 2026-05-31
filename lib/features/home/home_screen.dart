@@ -14,7 +14,11 @@ import '../news/news_screen.dart';
 import '../news/data/news_repository.dart';
 
 import '../notification/notification_screen.dart';
+import '../notification/data/notification_repository.dart';
+import 'dart:math' as math;
 import '../../core/services/supabase_realtime_service.dart';
+import '../../core/services/location_service.dart';
+import 'package:geolocator/geolocator.dart';
 import '../search/search_screen.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -33,6 +37,8 @@ class _HomeScreenState extends State<HomeScreen>
   late Future<UserModel> _profileFuture;
   late Future<List<DonationRequest>> _urgentFuture;
   late Future<List<ActivityItem>> _activityFuture;
+  int _unreadNotifCount = 0;
+  Position? _userPosition;
 
   @override
   void initState() {
@@ -42,6 +48,22 @@ class _HomeScreenState extends State<HomeScreen>
     _activityFuture = _repo.getUserActivity(limit: 4);
     WidgetsBinding.instance.addObserver(this);
     _subscribeRealtime();
+    _loadUnreadCount();
+    _loadUserPosition();
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final notifRepo = const NotificationRepository();
+      final notifs = await notifRepo.getUserNotifications(
+          page: 1, limit: 50, unread: true);
+      if (mounted) setState(() => _unreadNotifCount = notifs.length);
+    } catch (_) {}
+  }
+
+  Future<void> _loadUserPosition() async {
+    final pos = await LocationService.instance.getCurrentPosition();
+    if (mounted && pos != null) setState(() => _userPosition = pos);
   }
 
   void _subscribeRealtime() {
@@ -58,14 +80,14 @@ class _HomeScreenState extends State<HomeScreen>
       _urgentFuture = _fetchUrgentRequests();
       _activityFuture = _repo.getUserActivity(limit: 4);
     });
+    _loadUnreadCount();
   }
 
   Future<List<DonationRequest>> _fetchUrgentRequests() async {
-    // No.1 FIX: tampilkan open + onProgress di home
     final openFuture =
-        _repo.getAll(status: RequestStatus.open, page: 1, limit: 20);
+        _repo.getAll(status: RequestStatus.open, page: 1, limit: 50);
     final onProgressFuture =
-        _repo.getAll(status: RequestStatus.onProgress, page: 1, limit: 20);
+        _repo.getAll(status: RequestStatus.onProgress, page: 1, limit: 50);
     final results = await Future.wait([openFuture, onProgressFuture]);
     final combined = <String, DonationRequest>{};
     for (final list in results) {
@@ -73,8 +95,72 @@ class _HomeScreenState extends State<HomeScreen>
         combined[r.id] = r;
       }
     }
-    return combined.values.toList();
+
+    // Hanya tampilkan urgency tinggi (urgent) di home
+    var items =
+        combined.values.where((r) => r.urgency == UrgencyLevel.urgent).toList();
+
+    // Hitung jarak dari posisi user jika tersedia
+    final pos = _userPosition;
+    if (pos != null) {
+      items = items.map((req) {
+        if (req.distanceKm <= 0) {
+          final dMeters = _haversineMeters(
+            pos.latitude,
+            pos.longitude,
+            req.latitude,
+            req.longitude,
+          );
+          return DonationRequest(
+            id: req.id,
+            title: req.title,
+            description: req.description,
+            authorName: req.authorName,
+            authorAvatar: req.authorAvatar,
+            createdById: req.createdById,
+            urgency: req.urgency,
+            status: req.status,
+            category: req.category,
+            location: req.location,
+            latitude: req.latitude,
+            longitude: req.longitude,
+            timeAgo: req.timeAgo,
+            imageUrl: req.imageUrl,
+            goalAmount: req.goalAmount,
+            collectedAmount: req.collectedAmount,
+            tags: req.tags,
+            goalText: req.goalText,
+            avgRating: req.avgRating,
+            distanceKm: dMeters / 1000.0,
+            goalUnit: req.goalUnit,
+          );
+        }
+        return req;
+      }).toList();
+    }
+
+    // Urutkan: jarak terdekat (dan prioritas urgency tinggi di depan)
+    items.sort((a, b) {
+      final aKm = a.distanceKm > 0 ? a.distanceKm : double.maxFinite;
+      final bKm = b.distanceKm > 0 ? b.distanceKm : double.maxFinite;
+      return aKm.compareTo(bKm);
+    });
+
+    return items;
   }
+
+  double _haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371000.0;
+    final dLat = _degToRad(lat2 - lat1);
+    final dLon = _degToRad(lon2 - lon1);
+    final a = (math.sin(dLat / 2) * math.sin(dLat / 2)) +
+        math.cos(_degToRad(lat1)) *
+            math.cos(_degToRad(lat2)) *
+            (math.sin(dLon / 2) * math.sin(dLon / 2));
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  double _degToRad(double deg) => deg * (3.141592653589793 / 180.0);
 
   @override
   void dispose() {
@@ -116,12 +202,16 @@ class _HomeScreenState extends State<HomeScreen>
           backgroundColor: AppColors.background,
           appBar: AdaTitikAppBar(
             title: 'Beranda',
-            onNotification: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const NotificationScreen(),
-              ),
-            ),
+            unreadNotifCount: _unreadNotifCount,
+            onNotification: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const NotificationScreen(),
+                ),
+              );
+              _loadUnreadCount(); // refresh count after viewing
+            },
           ),
           body: RefreshIndicator(
             onRefresh: _refreshAll,
@@ -215,7 +305,7 @@ class _HomeScreenState extends State<HomeScreen>
         Expanded(
           child: _StatsCard(
             icon: Icons.location_on_rounded,
-            number: user.pointsHelped.toString(),
+            number: user.pointsHelped > 0 ? user.pointsHelped.toString() : '0',
             label: 'POINTS HELPED',
             color: AppColors.statsLavender,
             textColor: AppColors.textPrimary,
@@ -293,21 +383,7 @@ class _HomeScreenState extends State<HomeScreen>
             );
           }
 
-          final all = snapshot.data ?? [];
-
-          // ✅ Filter prioritas: Urgent terlebih dahulu, kemudian Normal, kemudian Rendah
-          final urgent =
-              all.where((r) => r.urgency == UrgencyLevel.urgent).toList();
-          final normal =
-              all.where((r) => r.urgency == UrgencyLevel.normal).toList();
-          final low = all.where((r) => r.urgency == UrgencyLevel.low).toList();
-
-          // Sort setiap kategori berdasarkan tanggal terbaru (untuk menampilkan komunitas terbaru)
-          urgent.sort((a, b) => b.timeAgo.compareTo(a.timeAgo));
-          normal.sort((a, b) => b.timeAgo.compareTo(a.timeAgo));
-          low.sort((a, b) => b.timeAgo.compareTo(a.timeAgo));
-
-          final ordered = [...urgent, ...normal, ...low].toList();
+          final ordered = snapshot.data ?? [];
 
           if (ordered.isEmpty) {
             return Center(
@@ -321,7 +397,8 @@ class _HomeScreenState extends State<HomeScreen>
           }
 
           debugPrint(
-              'Tampilkan ${ordered.length} kebutuhan (${urgent.length} urgent)');
+            'Tampilkan ${ordered.length} kebutuhan urgent',
+          );
 
           return ListView.separated(
             scrollDirection: Axis.horizontal,
@@ -329,9 +406,11 @@ class _HomeScreenState extends State<HomeScreen>
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final req = ordered[index];
-              // Debug: Print image URL untuk verifikasi
+
               debugPrint(
-                  'Card ${index}: ${req.title} - Image: ${req.imageUrl}');
+                'Card $index: ${req.title} - Image: ${req.imageUrl}',
+              );
+
               return _UrgentCard(
                 request: req,
                 onTap: () => Navigator.push(
@@ -659,12 +738,40 @@ class _UrgentCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
+                  // Distance chip
+                  if (request.distanceKm > 0)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryContainer,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.location_on_rounded,
+                              size: 11, color: AppColors.primary),
+                          const SizedBox(width: 2),
+                          Text(
+                            '${request.distanceKm.toStringAsFixed(1)} km',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   DonationProgressBar(
                     collected: request.collectedAmount,
                     goal: request.goalAmount,
                     collectedLabel:
-                        'Terkumpul: Rp ${_fmt(request.collectedAmount)}',
-                    goalLabel: 'Target: Rp ${_fmt(request.goalAmount)}',
+                        'Terkumpul: ${request.goalUnit == 'Kg' ? '${_fmt(request.collectedAmount)} Kg' : 'Rp ${_fmt(request.collectedAmount)}'}',
+                    goalLabel:
+                        'Target: ${request.goalUnit == 'Kg' ? '${_fmt(request.goalAmount)} Kg' : 'Rp ${_fmt(request.goalAmount)}'}',
                   ),
                 ],
               ),

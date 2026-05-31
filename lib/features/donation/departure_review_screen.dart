@@ -34,6 +34,37 @@ class DepartureReviewScreen extends ConsumerStatefulWidget {
       _DepartureReviewScreenState();
 }
 
+class _SolutionItem extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _SolutionItem({
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 18,
+          color: AppColors.primary,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTextStyles.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
   late final DonationRepository _repo;
 
@@ -102,28 +133,18 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '\${donatorIds.length} donatur berhasil di-accept! '
+            '${donatorIds.length} donatur berhasil di-accept! '
             'Poin sudah dikirimkan ke kedua pihak.',
           ),
           backgroundColor: AppColors.primary,
+          duration: const Duration(seconds: 3),
         ),
       );
 
-      // No.4 FIX: Arahkan ke rating screen setelah accept.
-      // Donatur akan mendapat notifikasi dari backend (via API acceptParticipants).
-      // Owner juga diarahkan untuk melihat konfirmasi dan membuka rating screen.
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RatingScreen(
-            pointId: widget.pointId,
-            pointTitle: widget.pointTitle,
-            communityName: 'Komunitas',
-          ),
-        ),
-      );
-
-      // Pop back dengan result true agar parent bisa refresh
+      // Pop back dengan result true agar parent bisa refresh.
+      // CATATAN: Owner TIDAK diarahkan ke rating screen. Rating hanya untuk donatur.
+      // Fix #9: Backend menambahkan activity ke donatur saat acceptParticipants dipanggil.
+      // Donatur akan melihat aktivitas baru di home screen dan profile activity.
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -165,18 +186,6 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
 
     setState(() => _processing = true);
     try {
-      // No 2 FIX: saat owner menekan "Tutup Titik",
-      // kita tidak boleh memaksa geo-fence/geo-complete rule.
-      // Backend sekarang memisahkan status "completed" (butuh geo-fencing)
-      // dan "closed" (ditutup manual).
-      //
-      // Jika backend Anda belum menyediakan endpoint "closed",
-      // maka implementasi fallback harus men-set status yang sesuai bisnis.
-      // Backend saat ini tidak menyediakan endpoint "closePoint".
-      // Rule "Completed" memerlukan geo-fencing, sehingga jangan memanggil status yang memicu GPS.
-      // Implementasi sementara: set kembali status request menjadi 'onProgress'
-      // (titik tetap tampil di list karena filter FE akan ditahan pada status aktif).
-      // Jika backend menyediakan endpoint manual close di kemudian hari, ganti implementasi ini.
       await _repo.closePoint(pointId: widget.pointId);
 
       if (!mounted) return;
@@ -189,9 +198,55 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal menutup titik: $e')),
-      );
+      final errStr = e.toString().toLowerCase();
+      // Jika error validasi status (mis. 'validasi gagal'), tampilkan dialog solusi
+      if (errStr.contains('validasi') ||
+          errStr.contains('validation') ||
+          errStr.contains('status') ||
+          errStr.contains('403') ||
+          errStr.contains('422')) {
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Gagal Menutup Titik'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '''Titik tidak dapat ditutup otomatis karena:
+                  $e
+
+                  Solusi yang tersedia:''',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                _SolutionItem(
+                  icon: Icons.edit_rounded,
+                  text:
+                      'Perbarui progress titik hingga 100% melalui "Edit Progress", lalu sistem akan menutup otomatis.',
+                ),
+                const SizedBox(height: 8),
+                _SolutionItem(
+                  icon: Icons.support_agent_rounded,
+                  text:
+                      'Hubungi admin untuk meminta penutupan manual jika progress sudah terpenuhi.',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Mengerti'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal menutup titik: $e')),
+        );
+      }
       setState(() => _processing = false);
     }
   }

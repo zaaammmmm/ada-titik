@@ -25,6 +25,7 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   bool _hasUnreadChat = false;
   bool _hasUnreadCommunity = false;
+  int _unreadChatCount = 0;
 
   @override
   void initState() {
@@ -41,6 +42,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       final convs = await chatRepo.listConversations(page: 1, limit: 50);
       if (!mounted) return;
       final hasUnreadChat = convs.any((c) => c.unread);
+      final unreadCount = convs.where((c) => c.unread).length;
 
       // Community indicator (baseline by timestamp/id order):
       // We'll consider it "new" if we can find posts newer than the previously cached first post.
@@ -53,6 +55,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       setState(() {
         _hasUnreadChat = hasUnreadChat;
         _hasUnreadCommunity = hasUnreadCommunity;
+        _unreadChatCount = unreadCount;
       });
     } catch (_) {
       // If API fails, keep dots off.
@@ -207,7 +210,10 @@ class _MainScaffoldState extends State<MainScaffold> {
               ),
               _buildFABItem(),
               _buildNavItem(
-                  3, Icons.chat_rounded, Icons.chat_outlined, 'Pesan'),
+                  3, Icons.chat_rounded, Icons.chat_outlined, 'Pesan',
+                  showDot: _hasUnreadChat,
+                  showCount: _unreadChatCount,
+                ),
               _buildNavItem(
                 4,
                 Icons.person_rounded,
@@ -227,23 +233,10 @@ class _MainScaffoldState extends State<MainScaffold> {
     IconData unselectedIcon,
     String label, {
     bool showDot = false,
+    int showCount = 0,
   }) {
     final isSelected = _currentIndex == index;
-    final dot = showDot
-        ? Positioned(
-            top: 6,
-            right: 14,
-            child: Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: AppColors.urgencyHigh,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.surface, width: 2),
-              ),
-            ),
-          )
-        : const SizedBox.shrink();
+    final hasBadge = showDot || showCount > 0;
     return Expanded(
       child: GestureDetector(
         onTap: () => _onItemTapped(index),
@@ -251,10 +244,43 @@ class _MainScaffoldState extends State<MainScaffold> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isSelected ? selectedIcon : unselectedIcon,
-              color: isSelected ? AppColors.primary : AppColors.textSecondary,
-              size: 24,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isSelected ? selectedIcon : unselectedIcon,
+                  color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                  size: 24,
+                ),
+                if (hasBadge)
+                  Positioned(
+                    right: showCount > 0 ? -8 : -2,
+                    top: -4,
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                      padding: showCount > 0
+                          ? const EdgeInsets.symmetric(horizontal: 3, vertical: 1)
+                          : EdgeInsets.zero,
+                      decoration: BoxDecoration(
+                        color: AppColors.urgencyHigh,
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(color: AppColors.surface, width: 1.5),
+                      ),
+                      child: showCount > 0
+                          ? Text(
+                              showCount > 99 ? '99+' : showCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                              ),
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox(width: 6, height: 6),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(
