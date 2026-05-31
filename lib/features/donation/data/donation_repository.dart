@@ -676,6 +676,36 @@ class DonationRepository {
     }
   }
 
+
+  /// Tutup titik secara manual (owner komunitas).
+  /// Memanggil PATCH /api/donations/:id/status dengan status 'Closed'.
+  /// Titik yang ditutup tidak perlu geo-fencing.
+  Future<void> closePoint({required String pointId}) async {
+    final res = await ApiClient.patch<Map<String, dynamic>>(
+      '/api/donations/$pointId/status',
+      data: {'status': 'Closed'},
+    );
+    final statusCode = res.statusCode ?? 0;
+    if (statusCode == 403) {
+      throw Exception(res.data?['error']?.toString() ?? 'Akses ditolak');
+    }
+    if (statusCode != 200) {
+      // Fallback: beberapa backend menggunakan 'completed' untuk manual close
+      if (statusCode == 422 || statusCode == 400) {
+        // Coba dengan Completed tanpa koordinat (backend mungkin tidak wajibkan geo)
+        final res2 = await ApiClient.patch<Map<String, dynamic>>(
+          '/api/donations/$pointId/status',
+          data: {'status': 'Completed'},
+        );
+        if ((res2.statusCode ?? 0) == 200) return;
+      }
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal menutup titik (${statusCode})';
+      throw Exception(msg);
+    }
+  }
+
   // --- Ratings ---
   Future<List<Map<String, dynamic>>> getRatings(String pointId) async {
     final res =

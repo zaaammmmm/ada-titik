@@ -14,6 +14,7 @@ import '../news/news_screen.dart';
 import '../news/data/news_repository.dart';
 
 import '../notification/notification_screen.dart';
+import '../../core/services/supabase_realtime_service.dart';
 import '../search/search_screen.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -32,46 +33,51 @@ class _HomeScreenState extends State<HomeScreen>
   late Future<UserModel> _profileFuture;
   late Future<List<DonationRequest>> _urgentFuture;
   late Future<List<ActivityItem>> _activityFuture;
-  Timer? _autoRefreshTimer;
-  bool _appInForeground = true;
 
   @override
   void initState() {
     super.initState();
     _profileFuture = _repo.getProfile();
-    _urgentFuture = _repo.getAll(
-      status: RequestStatus.open,
-      page: 1,
-      limit: 20,
-    );
+    _urgentFuture = _fetchUrgentRequests();
     _activityFuture = _repo.getUserActivity(limit: 4);
     WidgetsBinding.instance.addObserver(this);
-    // ✨ TODO L: Autorefresh setiap 60 detik (tidak agresif, hemat rate limit)
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
-      if (_appInForeground && mounted) _refreshAll();
+    _subscribeRealtime();
+  }
+
+  void _subscribeRealtime() {
+    // Realtime: reload hanya saat ada perubahan di donation_points
+    final supabase = SupabaseRealtimeService();
+    supabase.subscribeToDonationPoints(onUpdate: () {
+      if (mounted) _refreshAll();
     });
   }
 
   Future<void> _refreshAll() async {
     setState(() {
       _profileFuture = _repo.getProfile();
-      _urgentFuture = _repo.getAll(
-        status: RequestStatus.open,
-        page: 1,
-        limit: 20,
-      );
+      _urgentFuture = _fetchUrgentRequests();
       _activityFuture = _repo.getUserActivity(limit: 4);
     });
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    _appInForeground = state == AppLifecycleState.resumed;
+  Future<List<DonationRequest>> _fetchUrgentRequests() async {
+    // No.1 FIX: tampilkan open + onProgress di home
+    final openFuture =
+        _repo.getAll(status: RequestStatus.open, page: 1, limit: 20);
+    final onProgressFuture =
+        _repo.getAll(status: RequestStatus.onProgress, page: 1, limit: 20);
+    final results = await Future.wait([openFuture, onProgressFuture]);
+    final combined = <String, DonationRequest>{};
+    for (final list in results) {
+      for (final r in list) {
+        combined[r.id] = r;
+      }
+    }
+    return combined.values.toList();
   }
 
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

@@ -20,6 +20,8 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String? contextTitle;
   final String? contextSummary;
 
+  final String? initialMessage;
+
   const ChatScreen({
     super.key,
     this.targetUserId,
@@ -29,6 +31,7 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.otherUserAvatar,
     this.contextTitle,
     this.contextSummary,
+    this.initialMessage,
   });
 
   @override
@@ -141,6 +144,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
       await _repo.markAsRead(conversationId: conv.id);
       _scrollToBottom(animated: false);
+
+      // No.6 FIX: Pre-fill pesan awal dari konteks Maps (Shopee-style quick message)
+      if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+        _textController.text = widget.initialMessage!;
+        // Trigger UI update
+        _onTextChanged();
+      }
 
       // Subscribe realtime for new messages (Supabase Realtime)
       // Polling dinonaktifkan.

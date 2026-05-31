@@ -18,6 +18,7 @@ import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../chat/chat_screen.dart';
 import 'edit_progress_screen.dart';
+import 'rating_screen.dart';
 import 'departure_review_screen.dart';
 
 import 'dart:async';
@@ -44,9 +45,9 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   String? _selectedReview;
   int? _selectedScore;
   bool _submittingRating = false;
+  bool _hasShownRatingPrompt = false;
 
   // Auto-refresh
-  Timer? _refreshTimer;
   // Status partisipasi donatur saat ini ('requested', 'accepted', 'completed', null)
   Map<String, dynamic>? _myParticipation;
   bool _loadingParticipation = false;
@@ -60,12 +61,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     _ratingsFuture = _repo.getRatings(widget.request.id);
     _loadMyParticipation();
 
-    // Auto-refresh setiap 15 detik
-    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      if (!mounted) return;
-      _refreshAll();
-    });
-
+    // No.3 FIX: Tidak ada polling. Refresh hanya via Supabase Realtime.
     // Realtime subscription untuk notifikasi participants
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _subscribeRealtime();
@@ -107,14 +103,65 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     setState(() => _loadingParticipation = true);
     try {
       final p = await _repo.getMyParticipation(widget.request.id);
-      if (mounted) setState(() => _myParticipation = p);
+      if (mounted) {
+        final prevState = _myParticipation?['state']?.toString();
+        setState(() => _myParticipation = p);
+
+        // No.4 FIX: Jika baru saja berubah ke 'accepted', arahkan ke rating screen.
+        final newState = p?['state']?.toString().toLowerCase();
+        if (!_hasShownRatingPrompt &&
+            newState == 'accepted' &&
+            prevState?.toLowerCase() != 'accepted') {
+          _hasShownRatingPrompt = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showRatingPrompt();
+          });
+        }
+      }
     } catch (_) {}
     if (mounted) setState(() => _loadingParticipation = false);
   }
 
+  void _showRatingPrompt() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Berangkat di-Accept! 🎉'),
+        content: const Text(
+          'Komunitas telah menerima keberangkatan Anda. '
+          'Poin sudah ditambahkan ke akun Anda. '
+          'Bagikan pengalaman Anda dengan memberikan rating.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Nanti'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => RatingScreen(
+                    pointId: widget.request.id,
+                    pointTitle: widget.request.title,
+                    communityName: widget.request.authorName,
+                  ),
+                ),
+              );
+            },
+            child: const Text('Beri Rating Sekarang'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     super.dispose();
   }
 
@@ -403,7 +450,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        'Penerima Bantuan',
+                        'Komunitas',
                         style: AppTextStyles.labelSmall.copyWith(
                           color: AppColors.primary,
                           fontSize: 10,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants/app_colors.dart';
+import 'rating_screen.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
@@ -101,15 +102,29 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${donatorIds.length} donatur berhasil di-accept! '
+            '\${donatorIds.length} donatur berhasil di-accept! '
             'Poin sudah dikirimkan ke kedua pihak.',
           ),
           backgroundColor: AppColors.primary,
         ),
       );
 
+      // No.4 FIX: Arahkan ke rating screen setelah accept.
+      // Donatur akan mendapat notifikasi dari backend (via API acceptParticipants).
+      // Owner juga diarahkan untuk melihat konfirmasi dan membuka rating screen.
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RatingScreen(
+            pointId: widget.pointId,
+            pointTitle: widget.pointTitle,
+            communityName: 'Komunitas',
+          ),
+        ),
+      );
+
       // Pop back dengan result true agar parent bisa refresh
-      Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -162,10 +177,7 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
       // Implementasi sementara: set kembali status request menjadi 'onProgress'
       // (titik tetap tampil di list karena filter FE akan ditahan pada status aktif).
       // Jika backend menyediakan endpoint manual close di kemudian hari, ganti implementasi ini.
-      await _repo.updateStatus(
-        requestId: widget.pointId,
-        status: RequestStatus.onProgress,
-      );
+      await _repo.closePoint(pointId: widget.pointId);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

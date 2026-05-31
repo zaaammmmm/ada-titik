@@ -12,6 +12,36 @@ class SupabaseRealtimeService {
   StreamSubscription<dynamic>? _sub;
   RealtimeChannel? _channel;
 
+  /// Subscribe ke perubahan donation_points (insert/update).
+  /// Callback dipanggil tanpa argumen — caller cukup refresh state-nya.
+  RealtimeChannel? _donationChannel;
+
+  Future<void> subscribeToDonationPoints({
+    required void Function() onUpdate,
+  }) async {
+    try {
+      await _donationChannel?.unsubscribe();
+    } catch (_) {}
+
+    final supabase = Supabase.instance.client;
+    _donationChannel = supabase.channel('donation_points_changes');
+
+    _donationChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'donation_points',
+          callback: (_) => onUpdate(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'donation_points',
+          callback: (_) => onUpdate(),
+        )
+        .subscribe();
+  }
+
   /// Subscribe to realtime inserts for chat messages.
   ///
   /// Contract (backend): conversationId is an integer column named `conversation_id`.
@@ -52,7 +82,7 @@ class SupabaseRealtimeService {
         )
         .subscribe();
 
-    _channel!.subscribe();
+    // _channel!.subscribe();
   }
 
   /// Subscribe to realtime updates for chat conversations.
@@ -98,7 +128,7 @@ class SupabaseRealtimeService {
         )
         .subscribe();
 
-    _channel!.subscribe();
+    // _channel!.subscribe();
   }
 
   /// Subscribe to realtime inserts for notifications.
@@ -135,7 +165,7 @@ class SupabaseRealtimeService {
         )
         .subscribe();
 
-    _channel!.subscribe();
+    // _channel!.subscribe();
   }
 
   /// Tampilkan local notification untuk event notifikasi dari backend.

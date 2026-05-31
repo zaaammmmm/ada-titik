@@ -11,6 +11,7 @@ import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../donation/data/donation_repository.dart';
 import '../donation/request_detail_screen.dart';
+import '../chat/chat_screen.dart';
 import '../notification/notification_screen.dart';
 
 class MapsScreen extends StatefulWidget {
@@ -203,15 +204,7 @@ class _MapsScreenState extends State<MapsScreen> {
                         child: _UrgencyMarker(
                           color: _urgencyColor(req.urgency),
                           icon: _urgencyIcon(req.urgency),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    RequestDetailScreen(request: req),
-                              ),
-                            );
-                          },
+                          onTap: () => _showPointBottomSheet(context, req),
                         ),
                       );
                     }).toList(),
@@ -287,6 +280,17 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
+
+  void _showPointBottomSheet(BuildContext context, DonationRequest req) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _PointBottomSheet(request: req),
+    );
+  }
+
   Color _urgencyColor(UrgencyLevel u) {
     return switch (u) {
       UrgencyLevel.urgent => AppColors.urgencyHigh,
@@ -335,6 +339,220 @@ class _UrgencyMarker extends StatelessWidget {
           ],
         ),
         child: Icon(icon, color: Colors.white, size: 22),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet Shopee-style yang muncul saat marker titik di-tap di peta.
+/// Menampilkan info titik + tombol "Hubungi Komunitas" dengan konteks titik
+/// (judul, kategori, lokasi) yang langsung masuk ke chat bubble.
+class _PointBottomSheet extends StatelessWidget {
+  final DonationRequest request;
+  const _PointBottomSheet({required this.request});
+
+  static const List<String> _quickMessages = [
+    'Apakah titik bantuan ini masih aktif?',
+    'Berapa banyak bantuan yang masih dibutuhkan?',
+    'Saya ingin berangkat membantu, bagaimana caranya?',
+    'Apakah masih ada yang dibutuhkan selain yang tertulis?',
+  ];
+
+  void _openChat(BuildContext context, {String? initialMessage}) {
+    final targetUserId = request.createdById;
+    final postId = int.tryParse(request.id);
+    if (targetUserId == null || targetUserId.isEmpty || postId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tidak dapat membuka chat untuk titik ini.')),
+      );
+      return;
+    }
+    Navigator.pop(context); // tutup bottom sheet
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          targetUserId: targetUserId,
+          contextId: postId,
+          contextType: 'donation_point',
+          contextTitle: request.title,
+          contextSummary:
+              '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"}',
+          initialMessage: initialMessage,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Titik info card (konteks seperti Shopee)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Thumbnail gambar
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: request.imageUrl != null
+                      ? Image.network(
+                          request.imageUrl!,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _placeholderThumb(),
+                        )
+                      : _placeholderThumb(),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        request.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${request.category} · ${request.authorName}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Icon(Icons.location_on_outlined,
+                              size: 11, color: AppColors.primary),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Text(
+                              request.location.isNotEmpty
+                                  ? request.location
+                                  : 'Lihat peta',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.primary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+          const Text(
+            'Tanya ke Komunitas',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+
+          // Quick message chips (Shopee-style)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _quickMessages.map((msg) {
+              return GestureDetector(
+                onTap: () => _openChat(context, initialMessage: msg),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Text(
+                    msg,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RequestDetailScreen(request: request),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.info_outline_rounded, size: 16),
+                  label: const Text('Lihat Detail'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _openChat(context),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                  label: const Text('Hubungi Komunitas'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _placeholderThumb() {
+    return Container(
+      width: 56,
+      height: 56,
+      color: AppColors.primaryContainer,
+      child: const Icon(
+        Icons.volunteer_activism_rounded,
+        color: AppColors.primary,
+        size: 24,
       ),
     );
   }
