@@ -120,10 +120,34 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
 
     setState(() => _processing = true);
 
-    try {
-      final donatorIds = _selected.toList();
+    final donatorIds = _selected.toList();
 
-      // Accept → status participation menjadi 'accepted', poin diberikan
+    // Fix #3/#4: Optimistic UI — segera hapus dari list sebelum backend merespons
+    final acceptedParticipants = _participants
+        .where((p) => _selected.contains(p['donator_id']?.toString() ?? ''))
+        .toList();
+    setState(() {
+      _participants = _participants
+          .where((p) => !_selected.contains(p['donator_id']?.toString() ?? ''))
+          .toList();
+      _selected = {};
+    });
+
+    // Tampilkan snackbar langsung (tidak tunggu backend)
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${donatorIds.length} donatur di-accept! Poin sedang dikirimkan...',
+          ),
+          backgroundColor: AppColors.primary,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
+    try {
+      // Panggil backend (background)
       await _repo.acceptParticipants(
         pointId: widget.pointId,
         donatorIds: donatorIds,
@@ -141,17 +165,21 @@ class _DepartureReviewScreenState extends ConsumerState<DepartureReviewScreen> {
         ),
       );
 
-      // Pop back dengan result true agar parent bisa refresh.
-      // CATATAN: Owner TIDAK diarahkan ke rating screen. Rating hanya untuk donatur.
-      // Fix #9: Backend menambahkan activity ke donatur saat acceptParticipants dipanggil.
-      // Donatur akan melihat aktivitas baru di home screen dan profile activity.
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
+      // Rollback optimistic update
+      setState(() {
+        _participants = [...acceptedParticipants, ..._participants];
+        _selected = acceptedParticipants
+            .map((p) => p['donator_id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toSet();
+        _processing = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal: $e')),
+        SnackBar(content: Text('Gagal accept donatur: $e')),
       );
-      setState(() => _processing = false);
     }
   }
 

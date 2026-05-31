@@ -292,6 +292,8 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen>
             controller: _scrollController,
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: notifications.length,
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: true,
             separatorBuilder: (_, __) => const SizedBox(height: 4),
             itemBuilder: (context, index) {
               final item = notifications[index];

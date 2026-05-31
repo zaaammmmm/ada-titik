@@ -1,7 +1,10 @@
 // lib/shared/widgets/main_scaffold.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/services/supabase_realtime_service.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/community/community_screen.dart';
 import '../../features/chat/conversations_list_screen.dart';
@@ -10,28 +13,72 @@ import '../../features/community/data/community_repository.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/donation/add_titik_screen.dart';
 import '../../features/donation/data/donation_repository.dart';
+import '../../features/maps/maps_screen.dart';
 import '../../shared/models/models.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class MainScaffold extends StatefulWidget {
+class MainScaffold extends ConsumerStatefulWidget {
   final int initialIndex;
   const MainScaffold({super.key, this.initialIndex = 0});
 
   @override
-  State<MainScaffold> createState() => _MainScaffoldState();
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold> {
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
   late int _currentIndex;
 
   bool _hasUnreadChat = false;
   bool _hasUnreadCommunity = false;
   int _unreadChatCount = 0;
 
+  Timer? _chatRefreshTimer;
+  final SupabaseRealtimeService _realtime = SupabaseRealtimeService();
+
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _refreshUnreadIndicators();
+
+    // Polling ringan setiap 30 detik untuk chat unread count
+    _chatRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) _refreshChatUnread();
+    });
+
+    // Subscribe realtime untuk update chat conversations
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final userId = ref.read(authProvider).user?.id;
+      if (userId == null || userId.isEmpty) return;
+      // Subscribe realtime conversations
+      final realtimeConv = SupabaseRealtimeService();
+      await realtimeConv.subscribeToChatConversations(
+        currentUserId: userId,
+        onUpsert: (_) {
+          if (mounted) _refreshChatUnread();
+        },
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _chatRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshChatUnread() async {
+    try {
+      final chatRepo = const ChatRepository();
+      final convs = await chatRepo.listConversations(page: 1, limit: 50);
+      if (!mounted) return;
+      final hasUnreadChat = convs.any((c) => c.unread);
+      final unreadCount = convs.where((c) => c.unread).length;
+      setState(() {
+        _hasUnreadChat = hasUnreadChat;
+        _unreadChatCount = unreadCount;
+      });
+    } catch (_) {}
   }
 
   Future<void> _refreshUnreadIndicators() async {
@@ -44,9 +91,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       final hasUnreadChat = convs.any((c) => c.unread);
       final unreadCount = convs.where((c) => c.unread).length;
 
-      // Community indicator (baseline by timestamp/id order):
-      // We'll consider it "new" if we can find posts newer than the previously cached first post.
-      // If cache is empty (first run), we don't show dot.
       final posts =
           await communityRepo.getPosts(tab: 'terbaru', page: 1, limit: 10);
       if (!mounted) return;
@@ -58,7 +102,6 @@ class _MainScaffoldState extends State<MainScaffold> {
         _unreadChatCount = unreadCount;
       });
     } catch (_) {
-      // If API fails, keep dots off.
       if (!mounted) return;
       setState(() {
         _hasUnreadChat = false;
@@ -86,16 +129,22 @@ class _MainScaffoldState extends State<MainScaffold> {
   void _onItemTapped(int index) {
     if (index == 2) {
       _showAddTitikSheet();
-
       return;
+    }
+
+    // Ketika pindah ke tab chat (index 3), refresh unread count
+    if (index == 3) {
+      // Tandai sebagai sudah dilihat — refresh setelah sedikit delay agar
+      // ConversationsListScreen sempat mark-as-read
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) _refreshChatUnread();
+      });
     }
 
     setState(() => _currentIndex = index);
   }
 
   Future<void> _showAddTitikSheet() async {
-    // ✨ TODO C: Modal dengan dua opsi — "Tambahkan Titik" dan "Berdonasi"
-    // Role guard (donatur / komunitas / admin)
     final repo = const DonationRepository();
     late final UserModel user;
     try {
@@ -113,7 +162,6 @@ class _MainScaffoldState extends State<MainScaffold> {
     final role = user.role.toLowerCase();
     final isKomunitas = role == 'komunitas';
 
-    // ✨ Tampilkan modal bottom sheet dengan dua pilihan untuk semua role
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -127,13 +175,25 @@ class _MainScaffoldState extends State<MainScaffold> {
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (_) => const AddTitikScreen(),
+            builder: (_) => AddTitikScreen(
+              onTitikCreated: () {
+                // Refresh home screen saat titik baru dibuat
+                if (mounted) {
+                  setState(() {
+                    // Force-rebuild home screen
+                    _cachedScreens[0] = null;
+                  });
+                  // Navigate ke home
+                  _currentIndex = 0;
+                }
+              },
+            ),
           );
         },
         onBerdonasi: () {
           Navigator.pop(ctx);
-          // Navigasi ke Active Requests untuk memilih titik yang ingin dibantu
-          setState(() => _currentIndex = 3); // Maps tab
+          // Fix #5: navigasi ke Maps screen (index 2 di cachedScreens)
+          setState(() => _currentIndex = 3);
         },
       ),
     );
@@ -143,21 +203,21 @@ class _MainScaffoldState extends State<MainScaffold> {
   final List<Widget?> _cachedScreens = <Widget?>[
     null, // Home
     null, // Community
-    null, // Maps
+    null, // Chat/Pesan
     null, // Profile
   ];
 
   int get _displayIndex {
     if (_currentIndex < 2) return _currentIndex; // 0->0,1->1
     if (_currentIndex == 2) return 0; // FAB
-    return _currentIndex - 1; // 3->2,4->3
+    return _currentIndex - 1; // 3->2,4->3,5->4
   }
 
   @override
   Widget build(BuildContext context) {
     final displayIndex = _displayIndex;
 
-    // Ensure current tab screen is created lazily.
+    // Lazy init screens
     if (displayIndex >= 0 && displayIndex < _cachedScreens.length) {
       if (_cachedScreens[displayIndex] == null) {
         _cachedScreens[displayIndex] = switch (displayIndex) {
@@ -210,10 +270,13 @@ class _MainScaffoldState extends State<MainScaffold> {
               ),
               _buildFABItem(),
               _buildNavItem(
-                  3, Icons.chat_rounded, Icons.chat_outlined, 'Pesan',
-                  showDot: _hasUnreadChat,
-                  showCount: _unreadChatCount,
-                ),
+                3,
+                Icons.chat_rounded,
+                Icons.chat_outlined,
+                'Pesan',
+                showDot: _hasUnreadChat,
+                showCount: _unreadChatCount,
+              ),
               _buildNavItem(
                 4,
                 Icons.person_rounded,
@@ -249,7 +312,8 @@ class _MainScaffoldState extends State<MainScaffold> {
               children: [
                 Icon(
                   isSelected ? selectedIcon : unselectedIcon,
-                  color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                  color:
+                      isSelected ? AppColors.primary : AppColors.textSecondary,
                   size: 24,
                 ),
                 if (hasBadge)
@@ -257,14 +321,17 @@ class _MainScaffoldState extends State<MainScaffold> {
                     right: showCount > 0 ? -8 : -2,
                     top: -4,
                     child: Container(
-                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                      constraints:
+                          const BoxConstraints(minWidth: 14, minHeight: 14),
                       padding: showCount > 0
-                          ? const EdgeInsets.symmetric(horizontal: 3, vertical: 1)
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 3, vertical: 1)
                           : EdgeInsets.zero,
                       decoration: BoxDecoration(
                         color: AppColors.urgencyHigh,
                         borderRadius: BorderRadius.circular(7),
-                        border: Border.all(color: AppColors.surface, width: 1.5),
+                        border:
+                            Border.all(color: AppColors.surface, width: 1.5),
                       ),
                       child: showCount > 0
                           ? Text(
@@ -339,7 +406,6 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 }
 
-// ✨ TODO C: Modal sheet untuk tombol "+"
 class _AddActionSheet extends StatelessWidget {
   final bool isKomunitas;
   final VoidCallback onAddTitik;
@@ -362,7 +428,6 @@ class _AddActionSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle bar
           Container(
             width: 40,
             height: 4,
@@ -377,8 +442,6 @@ class _AddActionSheet extends StatelessWidget {
             style: AppTextStyles.headlineSmall,
           ),
           const SizedBox(height: 20),
-
-          // Tambahkan Titik
           _ActionOption(
             icon: Icons.add_location_alt_rounded,
             label: 'Tambahkan Titik',
@@ -389,8 +452,6 @@ class _AddActionSheet extends StatelessWidget {
             onTap: isKomunitas ? onAddTitik : null,
           ),
           const SizedBox(height: 12),
-
-          // Berdonasi
           _ActionOption(
             icon: Icons.volunteer_activism_rounded,
             label: 'Berdonasi',

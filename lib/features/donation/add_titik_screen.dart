@@ -60,7 +60,8 @@ class _UnitChip extends StatelessWidget {
 }
 
 class AddTitikScreen extends StatefulWidget {
-  const AddTitikScreen({super.key});
+  final VoidCallback? onTitikCreated;
+  const AddTitikScreen({super.key, this.onTitikCreated});
 
   @override
   State<AddTitikScreen> createState() => _AddTitikScreenState();
@@ -567,6 +568,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                                     backgroundColor: AppColors.primary,
                                   ),
                                 );
+                                // Callback agar MainScaffold bisa auto-refresh
+                                widget.onTitikCreated?.call();
                               } catch (e) {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(

@@ -364,10 +364,10 @@ class _ProfileContent extends StatelessWidget {
         children: [
           _ImpactCard(
             icon: Icons.local_shipping_outlined,
-            label: 'Bantuan Terselesaikan',
-            value: '${user.pointsHelped}',
+            label: 'Point Helped',
+            value: '\${user.pointsHelped}',
             sub: isKomunitas
-                ? 'Titik yang sudah selesai distribusi'
+                ? 'Jumlah titik yang berhasil dibantu'
                 : 'Titik yang telah Anda bantu',
             iconColor: const Color(0xFF1565C0),
             iconBg: const Color(0xFFE3F2FD),
@@ -512,6 +512,7 @@ class _ProfileContent extends StatelessWidget {
     return switch (type) {
       'success' => Icons.check_circle_outline_rounded,
       'donation' => Icons.favorite_outline_rounded,
+      'participant_accepted' => Icons.people_outline_rounded,
       _ => Icons.campaign_rounded,
     };
   }
@@ -520,6 +521,7 @@ class _ProfileContent extends StatelessWidget {
     return switch (type) {
       'success' => AppColors.statusCompletedLight,
       'donation' => AppColors.urgencyHighLight,
+      'participant_accepted' => AppColors.primaryContainer,
       _ => AppColors.urgencyMediumLight,
     };
   }
@@ -528,6 +530,7 @@ class _ProfileContent extends StatelessWidget {
     return switch (type) {
       'success' => AppColors.statusCompleted,
       'donation' => AppColors.urgencyHigh,
+      'participant_accepted' => AppColors.primary,
       _ => AppColors.urgencyMedium,
     };
   }

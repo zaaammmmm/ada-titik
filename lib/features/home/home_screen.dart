@@ -11,7 +11,9 @@ import '../donation/request_detail_screen.dart';
 import '../donation/data/donation_repository.dart';
 import '../maps/maps_screen.dart';
 import '../news/news_screen.dart';
+import '../news/news_detail_screen.dart';
 import '../news/data/news_repository.dart';
+import '../news/data/news_model.dart' as news_models;
 
 import '../notification/notification_screen.dart';
 import '../notification/data/notification_repository.dart';
@@ -543,6 +545,7 @@ class _HomeScreenState extends State<HomeScreen>
     return switch (type) {
       'success' => Icons.check_circle_rounded,
       'donation' => Icons.favorite_rounded,
+      'participant_accepted' => Icons.people_rounded,
       _ => Icons.campaign_rounded,
     };
   }
@@ -551,6 +554,7 @@ class _HomeScreenState extends State<HomeScreen>
     return switch (type) {
       'success' => AppColors.statusCompletedLight,
       'donation' => AppColors.urgencyHighLight,
+      'participant_accepted' => AppColors.primaryContainer,
       _ => AppColors.urgencyMediumLight,
     };
   }
@@ -559,6 +563,7 @@ class _HomeScreenState extends State<HomeScreen>
     return switch (type) {
       'success' => AppColors.statusCompleted,
       'donation' => AppColors.urgencyHigh,
+      'participant_accepted' => AppColors.primary,
       _ => AppColors.urgencyMedium,
     };
   }
@@ -585,6 +590,8 @@ class _HomeScreenState extends State<HomeScreen>
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: show.length,
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: true,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, i) {
               final article = show[i];
@@ -594,6 +601,19 @@ class _HomeScreenState extends State<HomeScreen>
                   subtitle: article.subtitle,
                   url: article.url,
                   icon: article.icon,
+                ),
+                onDetail: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => NewsDetailScreen(item: news_models.NewsItem(
+                      title: article.title,
+                      subtitle: article.subtitle,
+                      content: article.content,
+                      url: article.url,
+                      category: article.category,
+                      icon: article.icon,
+                    )),
+                  ),
                 ),
               );
             },
@@ -654,10 +674,58 @@ class _StatsCard extends StatelessWidget {
   }
 }
 
+class _UrgentCardWithDocs extends StatefulWidget {
+  final DonationRequest request;
+  final VoidCallback onTap;
+  final DonationRepository repo;
+  const _UrgentCardWithDocs({required this.request, required this.onTap, required this.repo});
+
+  @override
+  State<_UrgentCardWithDocs> createState() => _UrgentCardWithDocsState();
+}
+
+class _UrgentCardWithDocsState extends State<_UrgentCardWithDocs> {
+  String? _coverUrl;
+  bool _loadedDocs = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFirstDoc();
+  }
+
+  Future<void> _loadFirstDoc() async {
+    try {
+      final docs = await widget.repo.getDocumentation(widget.request.id);
+      if (!mounted) return;
+      if (docs.isNotEmpty) {
+        final url = docs.first['photo_url']?.toString();
+        if (url != null && url.isNotEmpty) {
+          setState(() { _coverUrl = url; _loadedDocs = true; });
+          return;
+        }
+      }
+      if (mounted) setState(() => _loadedDocs = true);
+    } catch (_) {
+      if (mounted) setState(() => _loadedDocs = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _UrgentCard(
+      request: widget.request,
+      onTap: widget.onTap,
+      coverImageUrl: _coverUrl,
+    );
+  }
+}
+
 class _UrgentCard extends StatelessWidget {
   final DonationRequest request;
   final VoidCallback onTap;
-  const _UrgentCard({required this.request, required this.onTap});
+  final String? coverImageUrl;
+  const _UrgentCard({required this.request, required this.onTap, this.coverImageUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -784,9 +852,12 @@ class _UrgentCard extends StatelessWidget {
 
   // ✅ Improved image widget dengan better error handling
   Widget _buildImageWidget() {
-    if (request.imageUrl != null && request.imageUrl!.isNotEmpty) {
+    final imageToShow = coverImageUrl?.isNotEmpty == true
+        ? coverImageUrl!
+        : request.imageUrl;
+    if (imageToShow != null && imageToShow.isNotEmpty) {
       return Image.network(
-        request.imageUrl!,
+        imageToShow,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
           debugPrint('Image error for ${request.title}: $error');
@@ -844,12 +915,13 @@ class _ArticleItem {
 
 class _ArticleCard extends StatelessWidget {
   final _ArticleItem article;
-  const _ArticleCard({required this.article});
+  final VoidCallback? onDetail;
+  const _ArticleCard({required this.article, this.onDetail});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () async {
+      onTap: onDetail ?? () async {
         final uri = Uri.parse(article.url);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -908,18 +980,25 @@ class _ArticleCard extends StatelessWidget {
             const Spacer(),
             Row(
               children: [
-                Text(
-                  'Baca selengkapnya',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
+                GestureDetector(
+                  onTap: onDetail,
+                  child: Row(
+                    children: [
+                      Text(
+                        'Baca selengkapnya',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(
+                        Icons.arrow_forward_rounded,
+                        color: AppColors.primary,
+                        size: 12,
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 2),
-                const Icon(
-                  Icons.arrow_forward_rounded,
-                  color: AppColors.primary,
-                  size: 12,
                 ),
               ],
             ),

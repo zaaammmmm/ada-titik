@@ -285,6 +285,8 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                   child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                     itemCount: requests.length,
+                    addAutomaticKeepAlives: false,
+                    addRepaintBoundaries: true,
                     itemBuilder: (context, index) {
                       return _RequestCard(request: requests[index]);
                     },

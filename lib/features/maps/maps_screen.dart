@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/services/location_service.dart';
+import '../../core/services/supabase_realtime_service.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 import '../donation/data/donation_repository.dart';
@@ -35,6 +36,8 @@ class _MapsScreenState extends State<MapsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
+  final SupabaseRealtimeService _realtime = SupabaseRealtimeService();
+
   @override
   void initState() {
     super.initState();
@@ -42,12 +45,25 @@ class _MapsScreenState extends State<MapsScreen> {
     _nearbyFuture = _loadNearby();
     _initGps();
     _loadUnreadCount();
+    _subscribeRealtime();
+  }
+
+  void _subscribeRealtime() {
+    // Fix #2 + #8: Subscribe to donation_points changes untuk auto-refresh peta
+    _realtime.subscribeToDonationPoints(onUpdate: () {
+      if (mounted) {
+        setState(() {
+          _nearbyFuture = _loadNearby();
+        });
+      }
+    });
   }
 
   Future<void> _loadUnreadCount() async {
     try {
       final notifRepo = const NotificationRepository();
-      final notifs = await notifRepo.getUserNotifications(page: 1, limit: 50, unread: true);
+      final notifs = await notifRepo.getUserNotifications(
+          page: 1, limit: 50, unread: true);
       if (mounted) setState(() => _unreadNotifCount = notifs.length);
     } catch (_) {}
   }
@@ -88,7 +104,7 @@ class _MapsScreenState extends State<MapsScreen> {
 
   Future<List<DonationRequest>> _loadNearby() async {
     final repo = DonationRepository();
-    // Fix 13: Tampilkan semua titik aktif (open + onProgress) - titik yang 
+    // Fix 13: Tampilkan semua titik aktif (open + onProgress) - titik yang
     // sudah di-accept (status onProgress) tetap tampil sampai benar-benar selesai
     return repo.getNearby(
       lat: _center.latitude,
@@ -96,6 +112,12 @@ class _MapsScreenState extends State<MapsScreen> {
       radiusMeters: 5000,
       statuses: [RequestStatus.open, RequestStatus.onProgress],
     );
+  }
+
+  @override
+  void dispose() {
+    _realtime.unsubscribeFromDonationPoints();
+    super.dispose();
   }
 
   @override
@@ -294,7 +316,6 @@ class _MapsScreenState extends State<MapsScreen> {
     );
   }
 
-
   void _showPointBottomSheet(BuildContext context, DonationRequest req) {
     showModalBottomSheet(
       context: context,
@@ -377,7 +398,8 @@ class _PointBottomSheet extends StatelessWidget {
     final postId = int.tryParse(request.id);
     if (targetUserId == null || targetUserId.isEmpty || postId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Tidak dapat membuka chat untuk titik ini.')),
+        const SnackBar(
+            content: Text('Tidak dapat membuka chat untuk titik ini.')),
       );
       return;
     }
@@ -510,7 +532,8 @@ class _PointBottomSheet extends StatelessWidget {
               return GestureDetector(
                 onTap: () => _openChat(context, initialMessage: msg),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),

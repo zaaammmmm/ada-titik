@@ -165,6 +165,43 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     super.dispose();
   }
 
+  static const List<String> _quickMessages = [
+    'Apakah titik bantuan ini masih aktif?',
+    'Berapa banyak bantuan yang masih dibutuhkan?',
+    'Saya ingin berangkat membantu, bagaimana caranya?',
+    'Apakah masih ada yang dibutuhkan selain yang tertulis?',
+  ];
+
+  void _openChatWithMessage(DonationRequest request, String? message) {
+    final targetUserId = request.createdById;
+    final contextIdInt = int.tryParse(request.id) ?? request.id.hashCode.abs();
+    if (targetUserId == null || targetUserId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('Tidak dapat membuka chat: pemilik titik tidak dikenal.')),
+      );
+      return;
+    }
+    final defaultMessage = '📍 *${request.title}*\n'
+        'Kategori: ${request.category}\n'
+        'Lokasi: ${request.location.isNotEmpty ? request.location : "Lihat peta"}';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          targetUserId: targetUserId,
+          contextId: contextIdInt,
+          contextType: 'donation_point',
+          contextTitle: request.title,
+          contextSummary:
+              '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"} · Target: ${request.goalUnit == 'Kg' ? '${request.goalAmount.toStringAsFixed(0)} Kg' : 'Rp ${request.goalAmount.toStringAsFixed(0)}'}',
+          initialMessage: message ?? defaultMessage,
+        ),
+      ),
+    );
+  }
+
   LatLng _latLngFromRequest(DonationRequest request) =>
       LatLng(request.latitude, request.longitude);
 
@@ -340,9 +377,9 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                     const SizedBox(height: 16),
                     _buildProgressCard(request),
                     const SizedBox(height: 16),
-                    _buildDocsSection(request, currentUser),
-                    const SizedBox(height: 16),
                     _buildRatingsSection(request, currentUser),
+                    const SizedBox(height: 16),
+                    _buildDocsSection(request, currentUser),
                     const SizedBox(height: 16),
                     _buildActionButtons(request, currentUser),
                   ]),
@@ -515,7 +552,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Terkumpul: Rp ${_formatNumber(collected)}',
+                'Terkumpul: ${request.goalUnit == 'Kg' ? '${_formatNumber(collected)} Kg' : 'Rp ${_formatNumber(collected)}'}',
                 style: AppTextStyles.bodySmall,
               ),
               Text(
@@ -794,31 +831,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
 
     return Column(
       children: [
-        // Edit Progress — hanya untuk owner, di atas navigasi
-        if (isOwner) ...[
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final result = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => EditProgressScreen(request: request),
-                  ),
-                );
-                if (result == true && mounted) {
-                  setState(() {
-                    _detailFuture = _repo.getById(widget.request.id);
-                  });
-                }
-              },
-              icon: const Icon(Icons.edit_rounded, size: 18),
-              label: const Text('Edit Progress'),
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
-
+        // Map preview dulu untuk owner
         // Map preview yang bisa ditekan untuk navigasi
         GestureDetector(
           onTap: _handleNavigateHere,
@@ -936,6 +949,31 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
             ),
           ),
         ),
+
+        // Edit Progress — owner, di bawah map (Fix #15)
+        if (isOwner) ...[
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final result = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditProgressScreen(request: request),
+                  ),
+                );
+                if (result == true && mounted) {
+                  setState(() {
+                    _detailFuture = _repo.getById(widget.request.id);
+                  });
+                }
+              },
+              icon: const Icon(Icons.edit_rounded, size: 18),
+              label: const Text('Edit Progress'),
+            ),
+          ),
+        ],
 
         // ── DONATUR ─────────────────────────────────────────────────────
         if (isDonatur) ...[
@@ -1125,41 +1163,13 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
 
         // ── CHAT ─────────────────────────────────────────────────────────
         if (!isOwner) ...[
+          const SizedBox(height: 12),
           Padding(
-            padding: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.only(top: 0),
             child: SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  final targetUserId = request.createdById;
-                  // contextId bisa string UUID atau numeric — coba parse, fallback ke hash
-                  final contextIdInt =
-                      int.tryParse(request.id) ?? request.id.hashCode.abs();
-                  if (targetUserId == null || targetUserId.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text(
-                              'Tidak dapat membuka chat: pemilik titik tidak dikenal.')),
-                    );
-                    return;
-                  }
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                        targetUserId: targetUserId,
-                        contextId: contextIdInt,
-                        contextType: 'donation_point',
-                        contextTitle: request.title,
-                        contextSummary:
-                            '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"} · Target: ${request.goalUnit == 'Kg' ? '${request.goalAmount.toStringAsFixed(0)} Kg' : 'Rp ${request.goalAmount.toStringAsFixed(0)}'}',
-                        initialMessage: '📍 *${request.title}*\n'
-                            'Kategori: ${request.category}\n'
-                            'Lokasi: ${request.location.isNotEmpty ? request.location : "Lihat peta"}',
-                      ),
-                    ),
-                  );
-                },
+                onPressed: () => _openChatWithMessage(request, null),
                 icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
                 label: const Text('Hubungi Komunitas'),
               ),

@@ -260,6 +260,9 @@ class DonationRepository {
     final lowerStatus = status.toLowerCase();
     final lowerText = '${title.toLowerCase()} ${subtitle.toLowerCase()}';
 
+    if (lowerType.contains('participant_accepted') || lowerType.contains('accepted')) {
+      return 'participant_accepted';
+    }
     if (lowerStatus.contains('complete') || lowerStatus.contains('selesai')) {
       return 'success';
     }

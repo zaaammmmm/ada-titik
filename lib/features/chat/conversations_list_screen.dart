@@ -127,8 +127,38 @@ class _ConversationsListScreenState
     return '${dt.day} ${months[dt.month]}';
   }
 
-  void _openChat(ChatConversationDto c) {
-    Navigator.push(
+  void _openChat(ChatConversationDto c) async {
+    // Optimistic UI: immediately mark as read in local state
+    if (c.unread) {
+      setState(() {
+        final idx = _convs.indexWhere((conv) => conv.id == c.id);
+        if (idx >= 0) {
+          final updated = ChatConversationDto(
+            id: c.id,
+            contextType: c.contextType,
+            contextId: c.contextId,
+            otherUserId: c.otherUserId,
+            otherUserName: c.otherUserName,
+            otherUserAvatar: c.otherUserAvatar,
+            lastActivityAt: c.lastActivityAt,
+            lastMessageBody: c.lastMessageBody,
+            unread: false, // optimistic
+          );
+          _convs = [
+            ..._convs.sublist(0, idx),
+            updated,
+            ..._convs.sublist(idx + 1),
+          ];
+        }
+      });
+      // Fire-and-forget mark as read on backend
+      _repo.markAsRead(conversationId: c.id).catchError((_) {
+        // On error reload from server
+        if (mounted) _load();
+      });
+    }
+
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatScreen(
@@ -140,6 +170,8 @@ class _ConversationsListScreenState
         ),
       ),
     );
+    // After returning from chat, refresh conversations to get latest state
+    if (mounted) _load();
   }
 
   ChatConversationDto _mapConversationFromRealtime(Map<String, dynamic> row) {
@@ -207,6 +239,8 @@ class _ConversationsListScreenState
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: items.length,
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
       separatorBuilder: (_, __) => const Divider(
         height: 1,
         indent: 76,
