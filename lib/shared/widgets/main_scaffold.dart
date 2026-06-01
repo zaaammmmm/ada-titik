@@ -1,6 +1,7 @@
 // lib/shared/widgets/main_scaffold.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/auth_provider.dart';
@@ -161,7 +162,9 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   }
 
   void _onItemTapped(int index) {
+    HapticFeedback.selectionClick(); // feedback taktil tiap pindah tab
     if (index == 2) {
+      HapticFeedback.mediumImpact(); // FAB tengah terasa lebih "berbobot"
       _showAddTitikSheet();
       return;
     }

@@ -134,87 +134,18 @@ class _HomeScreenState extends State<HomeScreen>
     _loadUserPosition();
   }
 
-  /// Hitung activity count & user points dari aktivitas nyata pengguna.
-  /// Activity count: jumlah rating diberikan + titik di-accept owner + pembuatan
-  /// titik (komunitas) + pembuatan postingan komunitas (komunitas).
-  /// User points: akumulasi poin dari setiap aksi.
+  /// Statistik dari DATA ASLI backend (bukan mengarang poin via string-matching).
+  /// Poin = users.points (GET /api/users/points); jumlah aktivitas =
+  /// pagination.total (GET /api/users/activity).
   Future<_HomeStats> _fetchStats() async {
     try {
-      final profile = await _repo.getProfile();
-      final isKomunitas = profile.role.toLowerCase() == 'komunitas';
-
-      final activities = await _repo.getUserActivity(limit: 100);
-
-      int activityCount = 0;
-      int earnedPoints = 0;
-
-      for (final a in activities) {
-        final type = a.iconType.toLowerCase();
-        final title = a.title.toLowerCase();
-
-        // Pemberian rating (donatur)
-        if (type == 'rating' ||
-            title.contains('rating') ||
-            title.contains('ulasan')) {
-          activityCount++;
-          earnedPoints += 15; // +15 poin per rating
-        }
-        // Donasi diterima / berangkat di-accept (donatur)
-        else if (type == 'participant_accepted' ||
-            type == 'donation' ||
-            title.contains('diterima') ||
-            title.contains('accept') ||
-            title.contains('berangkat')) {
-          activityCount++;
-          earnedPoints += 50; // +50 poin donasi berhasil berangkat
-        }
-        // Donasi selesai (completed)
-        else if (type == 'success' ||
-            title.contains('selesai') ||
-            title.contains('complete') ||
-            title.contains('berhasil')) {
-          activityCount++;
-          earnedPoints += 100; // +100 poin donasi selesai
-        }
-        // Pembuatan titik (komunitas)
-        else if (isKomunitas &&
-            (type == 'donation_managed' ||
-                title.contains('titik') ||
-                title.contains('membuat') ||
-                title.contains('buat'))) {
-          activityCount++;
-          earnedPoints += 30; // +30 poin per titik yang dibuat
-        }
-        // Pembuatan postingan komunitas feed (komunitas)
-        else if (isKomunitas &&
-            (type == 'community_post' ||
-                title.contains('postingan') ||
-                title.contains('posting') ||
-                title.contains('feed'))) {
-          activityCount++;
-          earnedPoints += 10; // +10 poin per postingan
-        }
-        // Penyelesaian accept dari owner (komunitas accept)
-        else if (isKomunitas &&
-            (title.contains('menyelesaikan') ||
-                title.contains('verifikasi') ||
-                title.contains('konfirmasi'))) {
-          activityCount++;
-          earnedPoints += 25; // +25 poin penyelesaian accept
-        }
-      }
-
-      // Bonus poin berdasarkan jumlah total donasi dari profile
-      // (misal poin dari donasi uang via backend)
-      final backendPoints = profile.communityPoints;
-      // Gabungkan: gunakan nilai terbesar antara kalkulasi frontend vs backend
-      final finalPoints =
-          earnedPoints > backendPoints ? earnedPoints : backendPoints;
-
+      final results = await Future.wait([
+        _repo.getMyPointsTotal(),
+        _repo.getActivityTotal(),
+      ]);
       return _HomeStats(
-        activityCount:
-            activityCount > 0 ? activityCount : profile.donationCount,
-        earnedPoints: finalPoints,
+        activityCount: results[1],
+        earnedPoints: results[0],
       );
     } catch (_) {
       return const _HomeStats(activityCount: 0, earnedPoints: 0);
@@ -323,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (snapshot.hasError || !snapshot.hasData) {
           return const Scaffold(
             backgroundColor: AppColors.background,
-            body: Center(child: Text('Failed to load profile')),
+            body: Center(child: Text('Gagal memuat profil')),
           );
         }
 
@@ -354,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen>
                 children: [
                   const SizedBox(height: 12),
                   AppSearchBar(
-                    hint: 'Search for aid requests, categories...',
+                    hint: 'Cari titik bantuan, kategori, lokasi…',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const SearchScreen()),
@@ -391,16 +322,28 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildGreeting(UserModel user) {
+    final firstName = user.name.trim().split(' ').first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Halo, ${user.name}!', style: AppTextStyles.displayMedium),
+        Text('Halo, $firstName!', style: AppTextStyles.displayMedium),
         const SizedBox(height: 4),
-        Text(
-          'Keramahan Anda menciptakan gelombang. Siap membuat dampak hari ini?',
-          style: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.textSecondary,
-          ),
+        // Subtitle data-driven: jumlah titik mendesak di sekitar (lebih hidup
+        // & relevan daripada kalimat motivasi generik).
+        FutureBuilder<List<DonationRequest>>(
+          future: _urgentFuture,
+          builder: (context, snapshot) {
+            final n = snapshot.data?.length ?? 0;
+            final text = n > 0
+                ? 'Ada $n titik mendesak di dekatmu hari ini. Yuk bantu 🤝'
+                : 'Yuk lihat siapa yang butuh bantuan di sekitarmu hari ini.';
+            return Text(
+              text,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            );
+          },
         ),
       ],
     );
@@ -418,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen>
               child: _StatsCard(
                 icon: Icons.local_activity_rounded,
                 number: stats.activityCount.toString(),
-                label: 'ACTIVITY COUNT',
+                label: 'AKTIVITAS',
                 color: AppColors.statsTeal,
                 textColor: Colors.white,
               ),
@@ -507,10 +450,23 @@ class _HomeScreenState extends State<HomeScreen>
           final ordered = snapshot.data ?? [];
           if (ordered.isEmpty) {
             return Center(
-              child: Text(
-                'Belum ada kebutuhan mendesak',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: AppColors.textSecondary),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.spa_rounded,
+                      color: AppColors.primary.withOpacity(0.7), size: 36),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Semua aman untuk saat ini 🌱',
+                    style: AppTextStyles.titleSmall,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Belum ada kebutuhan mendesak di sekitarmu.',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary),
+                  ),
+                ],
               ),
             );
           }

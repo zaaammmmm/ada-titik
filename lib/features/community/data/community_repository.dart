@@ -157,18 +157,24 @@ class CommunityRepository {
     );
   }
 
-  // ─── Legacy: laporan titik (reuse endpoint /api/reports) ───────────────
+  // Laporan postingan komunitas — endpoint khusus (v7).
+  // Sebelumnya keliru mengirim post id ke /api/reports (kolom point_id, FK ke
+  // donation_points) yang menyebabkan FK violation / salah lapor.
   Future<void> reportPost({
     required String postId,
     required String reason,
   }) async {
-    await ApiClient.post<Map<String, dynamic>>(
-      '/api/reports',
-      data: {
-        'point_id': postId,
-        'reason': reason,
-      },
+    final res = await ApiClient.post<Map<String, dynamic>>(
+      '/api/community/posts/$postId/report',
+      data: {'reason': reason},
     );
+    final code = res.statusCode ?? 0;
+    if (code != 201 && code != 200) {
+      final msg = res.data?['error']?.toString() ??
+          res.data?['message']?.toString() ??
+          'Gagal mengirim laporan ($code)';
+      throw Exception(msg);
+    }
   }
 
   // ─── GET /api/community/posts/:id ─────────────────────────────────────

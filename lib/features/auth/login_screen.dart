@@ -3,12 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/app_globals.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/auth_storage.dart';
 import '../../core/providers/auth_provider.dart';
+import '../../core/services/supabase_session.dart';
 import '../../features/donation/data/donation_repository.dart';
+import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
 
 import 'register_screen.dart';
@@ -71,6 +74,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           return;
         }
 
+        // Pasang Supabase token → realtime authenticated (RLS notifications/chat).
+        final supabaseToken = res.data?['supabase_token'];
+        if (supabaseToken is String && supabaseToken.isNotEmpty) {
+          await SupabaseSession.setToken(supabaseToken);
+        }
+
         final profile = await DonationRepository().getProfile();
 
         if (!mounted) return;
@@ -82,11 +91,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
         if (!mounted) return;
 
-        if (profile.isAdmin) {
-          context.go('/admin');
-        } else {
-          context.go('/home');
-        }
+        // Routing + alert berbasis role.
+        final dest = profile.isAdmin ? '/admin' : '/home';
+        context.go(dest);
+        _showRoleWelcome(profile);
 
         return;
       }
@@ -129,6 +137,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  /// Alert sambutan berbasis role — tampil setelah pindah ke halaman tujuan
+  /// (pakai messenger global agar tidak hilang saat navigasi).
+  void _showRoleWelcome(UserModel user) {
+    final firstName = user.name.trim().split(' ').first;
+    final (String message, IconData icon, Color color) = switch (user.role.toLowerCase()) {
+      'admin' => (
+          'Selamat datang, Admin $firstName. Ada laporan menunggu ditinjau.',
+          Icons.shield_rounded,
+          AppColors.primary,
+        ),
+      'komunitas' => (
+          'Halo, $firstName! Kelola titik & terhubung dengan para donatur.',
+          Icons.diversity_3_rounded,
+          AppColors.primary,
+        ),
+      _ => (
+          'Selamat datang kembali, $firstName! Yuk lihat siapa yang butuh bantuan hari ini.',
+          Icons.volunteer_activism_rounded,
+          AppColors.primary,
+        ),
+    };
+
+    rootMessengerKey.currentState
+      ?..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: color,
+          duration: const Duration(seconds: 3),
+          content: Row(
+            children: [
+              Icon(icon, color: Colors.white, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
@@ -163,7 +216,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _login,
-                  child: Text(_isLoading ? 'Logging in...' : 'Login'),
+                  child: Text(_isLoading ? 'Masuk…' : 'Masuk'),
                 ),
               ),
               const SizedBox(height: 24),

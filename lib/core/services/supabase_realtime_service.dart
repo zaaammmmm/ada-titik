@@ -9,11 +9,23 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'notification_service.dart';
 
 class SupabaseRealtimeService {
   SupabaseRealtimeService();
+
+  // Callback status koneksi — biar kegagalan realtime tidak diam-diam.
+  // SUBSCRIBED = sehat; CHANNEL_ERROR/TIMED_OUT = ada masalah (kredensial/RLS).
+  static void _logStatus(String channel, RealtimeSubscribeStatus status,
+      [Object? error]) {
+    if (status == RealtimeSubscribeStatus.subscribed) {
+      debugPrint('[realtime] $channel: SUBSCRIBED ✓');
+    } else {
+      debugPrint('[realtime] $channel: $status ${error ?? ''}');
+    }
+  }
 
   StreamSubscription<dynamic>? _sub;
   RealtimeChannel? _channel;
@@ -45,7 +57,8 @@ class SupabaseRealtimeService {
           table: 'community_posts',
           callback: (_) => onInsert(),
         )
-        .subscribe();
+        .subscribe((status, [error]) =>
+            _logStatus('community_posts', status, error));
   }
 
   Future<void> unsubscribeFromCommunityPosts() async {
@@ -83,7 +96,8 @@ class SupabaseRealtimeService {
           table: 'donation_points',
           callback: (_) => onUpdate(),
         )
-        .subscribe();
+        .subscribe((status, [error]) =>
+            _logStatus('donation_points', status, error));
   }
 
   Future<void> unsubscribeFromDonationPoints() async {
@@ -253,7 +267,8 @@ class SupabaseRealtimeService {
             }
           },
         )
-        .subscribe();
+        .subscribe((status, [error]) =>
+            _logStatus('notifications', status, error));
   }
 
   void _showLocalNotification(Map<String, dynamic> record) {

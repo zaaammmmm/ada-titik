@@ -1,5 +1,6 @@
 // lib/shared/widgets/app_widgets.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -50,17 +51,17 @@ class UrgencyBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, bg, fg) = switch (urgency) {
       UrgencyLevel.urgent => (
-          '! High Urgency',
+          'Mendesak',
           AppColors.urgencyHighLight,
           AppColors.urgencyHigh,
         ),
       UrgencyLevel.normal => (
-          '! Normal',
+          'Normal',
           AppColors.urgencyMediumLight,
           AppColors.urgencyMedium,
         ),
       UrgencyLevel.low => (
-          'Low',
+          'Tidak Mendesak',
           AppColors.urgencyLowLight,
           AppColors.urgencyLow,
         ),
@@ -94,19 +95,19 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, bg, fg, icon) = switch (status) {
       RequestStatus.open => (
-          'Open Request',
+          'Butuh Bantuan',
           AppColors.statusOpenLight,
           AppColors.statusOpen,
           Icons.radio_button_on_rounded,
         ),
       RequestStatus.onProgress => (
-          'In Progress',
+          'Sedang Berjalan',
           AppColors.statusProgressLight,
           AppColors.statusProgress,
           Icons.sync_rounded,
         ),
       RequestStatus.completed => (
-          'Completed',
+          'Selesai',
           AppColors.statusCompletedLight,
           AppColors.statusCompleted,
           Icons.check_circle_rounded,
@@ -475,6 +476,147 @@ class FilterChipWidget extends StatelessWidget {
             color: isSelected ? Colors.white : AppColors.textSecondary,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Empty State ──────────────────────────────────────────────────────────────
+//
+// Pengganti empty-state "teks abu-abu satu baris" yang lifeless. Menampilkan
+// ikon dalam lingkaran ber-tint, judul hangat, subjudul, dan CTA opsional.
+class EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final EdgeInsetsGeometry padding;
+
+  const EmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.message,
+    this.actionLabel,
+    this.onAction,
+    this.padding = const EdgeInsets.all(32),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: padding,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 40, color: AppColors.primary),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: AppTextStyles.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            if (message != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                message!,
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 18),
+              FilledButton.tonal(
+                onPressed: onAction,
+                child: Text(actionLabel!),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Animated Like Button ─────────────────────────────────────────────────────
+//
+// Heart yang "pop" (skala 1 → 1.3 → 1) + haptic saat ditekan, jauh lebih hidup
+// daripada sekadar ganti ikon. Dipakai di feed komunitas.
+class LikeButton extends StatefulWidget {
+  final bool liked;
+  final int count;
+  final VoidCallback onTap;
+
+  const LikeButton({
+    super.key,
+    required this.liked,
+    required this.count,
+    required this.onTap,
+  });
+
+  @override
+  State<LikeButton> createState() => _LikeButtonState();
+}
+
+class _LikeButtonState extends State<LikeButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    HapticFeedback.mediumImpact();
+    _controller.forward(from: 0);
+    widget.onTap();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = Tween<double>(begin: 1, end: 1.3)
+        .chain(CurveTween(curve: Curves.elasticOut))
+        .animate(_controller);
+    return InkWell(
+      onTap: _handleTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ScaleTransition(
+              scale: scale,
+              child: Icon(
+                widget.liked
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                size: 20,
+                color: widget.liked ? AppColors.urgencyHigh : AppColors.textLight,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text('${widget.count}',
+                style: AppTextStyles.labelMedium
+                    .copyWith(color: AppColors.textSecondary)),
+          ],
         ),
       ),
     );
