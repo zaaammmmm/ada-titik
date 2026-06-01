@@ -1,4 +1,4 @@
-# 📍 Ada Titik?
+# 📍 Ada Titik
 
 <div align="center">
 
@@ -19,7 +19,7 @@
 
 ## 🎯 Tentang Projek
 
-**ada titik?** adalah aplikasi *social donation mapping* berbasis lokasi yang bertujuan untuk menjembatani **donatur** dan **komunitas penyalur bantuan** secara transparan, akurat, dan efisien.
+**ada titik** adalah aplikasi *social donation mapping* berbasis lokasi yang bertujuan untuk menjembatani **donatur** dan **komunitas penyalur bantuan** secara transparan, akurat, dan efisien.
 
 Berbeda dengan platform donasi konvensional, aplikasi ini tidak hanya menghubungkan pemberi dan penerima bantuan, tetapi menghadirkan **sistem berbasis peta interaktif (map-based system)** yang memungkinkan distribusi bantuan dilakukan secara **tepat sasaran** — hingga ke tingkat kelurahan.
 
@@ -34,7 +34,7 @@ Dalam praktik di masyarakat, terdapat beberapa permasalahan utama dalam ekosiste
 | ❗ **Kurangnya Validasi** | Banyak permintaan bantuan tidak jelas atau fiktif |
 | ❗ **Minim Transparansi** | Donatur tidak tahu apakah bantuan benar-benar sampai |
 
-**ada titik?** hadir sebagai jawaban atas permasalahan tersebut dengan menggabungkan teknologi *Location-Based Service* (LBS), geo-fencing, dan sistem dokumentasi untuk membangun ekosistem donasi yang terukur dan berdampak nyata.
+**ada titik** hadir sebagai jawaban atas permasalahan tersebut dengan menggabungkan teknologi *Location-Based Service* (LBS), geo-fencing, dan sistem dokumentasi untuk membangun ekosistem donasi yang terukur dan berdampak nyata.
 
 ---
 
@@ -178,25 +178,28 @@ Titik bantuan ditampilkan dalam peta dengan warna berdasarkan urgensi:
 <table>
 <tr>
 <td align="center" width="25%">
+<b>Ahmad Zamroni Trikarta</b><br>
+<i>Project Manager</i><br>
+<i>Fullstack Developer</i>
+<a href="https://github.com/zaaammmmm">@zaaammmmm</a>
+</td>
+<td align="center" width="25%">
 <b>Agung Nugraha</b><br>
-<i>Frontend Developer</i><br>
-<i>Mobile Engineer</i>
+<i>Backend Developer</i><br>
+<i>Database Architect</i><br>
+<a href="https://github.com/NUGRAHA18">@NUGRAHA18</a>
 </td>
 <td align="center" width="25%">
 <b>Ibnu Zaki</b><br>
 <i>Frontend Developer</i><br>
 <i>UI Implementation</i>
-</td>
-<td align="center" width="25%">
-<b>Ahmad Zamroni Trikarta</b><br>
-<i>Backend Developer</i><br>
-<i>Database Architect</i><br>
-<a href="https://github.com/zaaammmmm">@zaaammmmm</a>
+<a href="https://github.com/zakiibnu723">@zakiibnu723</a>
 </td>
 <td align="center" width="25%">
 <b>Ahmad Mustofa Aslam</b><br>
-<i>Backend Developer</i><br>
-<i>API Engineer</i>
+<i>UI/UX Designer</i><br>
+<i>Tester</i>
+<a href="https://github.com/musthofaaslam">@musthofaaslam</a>
 </td>
 </tr>
 </table>
@@ -253,96 +256,10 @@ Pastikan Anda telah menginstal:
    flutter pub get
    ```
 
-3. **Konfigurasi Environment**
-
-   Sesuaikan URL API backend di `lib/core/constants/app_config.dart`:
-   ```dart
-   static const String baseUrl = 'http://your-backend-url/api';
-   ```
-
-4. **Jalankan Aplikasi**
+3. **Jalankan Aplikasi**
    ```bash
    flutter run
    ```
-
----
-
-### 🔧 Instalasi — Backend (Node.js)
-
-1. **Clone Repository Backend**
-   ```bash
-   git clone https://github.com/zaaammmmm/ada-titik-backend.git
-   cd ada-titik-backend
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   npm install
-   # atau
-   yarn install
-   ```
-
-3. **Setup Environment Variables**
-   ```bash
-   cp .env.example .env
-   ```
-
-   Isi variabel environment yang diperlukan:
-   ```env
-   NODE_ENV=development
-   PORT=3000
-   DATABASE_URL=postgres://postgres:password@localhost:5432/titik_baik
-   DB_PASSWORD=your_db_password
-   JWT_SECRET=your_long_random_secret
-   SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-   SUPABASE_ANON_KEY=your_anon_key
-   SUPABASE_JWT_SECRET=your_supabase_jwt_secret
-   ```
-
-4. **Jalankan Migrasi Database**
-   ```bash
-   npm run migrate
-   ```
-
-5. **Seed Data Awal (Opsional)**
-   ```bash
-   npm run seed
-   ```
-
-6. **Jalankan Development Server**
-   ```bash
-   npm run dev
-   ```
-
-   Server berjalan di `http://localhost:3000`
-
-### 🐳 Menjalankan dengan Docker
-
-```bash
-# Build dan jalankan semua service
-npm run docker:build
-npm run docker:up
-
-# Melihat log
-npm run docker:logs
-
-# Menghentikan service
-npm run docker:down
-```
-
-### 🚀 Build untuk Production
-
-```bash
-# Backend
-npm run build
-npm start
-
-# Frontend Flutter
-flutter build apk --release
-# atau
-flutter build appbundle --release
-```
 
 ---
 
@@ -374,33 +291,6 @@ ada_titik/
 │   ├── 📁 images/
 │   └── 📁 icons/
 └── 📄 pubspec.yaml
-```
-
-### Backend (Node.js)
-
-```
-ada_titik-backend/
-├── 📁 src/
-│   ├── 📁 config/              # DB, env, Supabase config
-│   ├── 📁 controllers/         # Logic handler per domain
-│   │   ├── authController.js
-│   │   ├── donationController.js
-│   │   ├── communityController.js
-│   │   ├── chatController.js
-│   │   ├── notificationController.js
-│   │   └── ...
-│   ├── 📁 middleware/          # Auth, role, error, upload, validator
-│   └── 📁 routes/             # Definisi endpoint per domain
-├── 📁 database/
-│   ├── schema.sql              # Skema lengkap database
-│   ├── migrate.js              # Runner migrasi
-│   └── migration_v*.sql        # File migrasi bertahap
-├── 📁 documentations/          # Dokumentasi API & requirement
-│   └── API_DOCUMENTATION.md
-├── 📁 nginx/                   # Konfigurasi reverse proxy
-├── 📄 docker-compose.yml
-├── 📄 Dockerfile
-└── 📄 package.json
 ```
 
 ---
@@ -501,7 +391,7 @@ Projek ini dilisensikan di bawah **MIT License**.
 ```
 MIT License
 
-Copyright (c) 2026 Ada Titik? Team — Kelompok 4 Informatika
+Copyright (c) 2026 Ada Titik Team — Kelompok 4 Informatika
 UIN Sunan Kalijaga Yogyakarta
 ```
 
