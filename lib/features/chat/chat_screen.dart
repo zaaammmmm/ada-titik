@@ -54,7 +54,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _isTyping = false;
   bool _canLoadMore = false;
   bool _loadingMore = false;
-  bool _quickMessagesSent = false; // hide quick messages after first use
+  bool _quickMessagesSent =
+      false; // hide quick messages after first use (per point logic below)
+
+  String? _quickMessagesSentForPointId;
+
+  // guard untuk context message
+  // (_contextMessageSent) lama sudah tidak dipakai.
+
+  String? _contextMessageSentForPointId;
 
   int? _conversationId;
   List<ChatMessageDto> _messages = [];
@@ -155,7 +163,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         // Don't auto-send here; the quick message card handles the first message
         // Just ensure quick messages are shown
         setState(() => _quickMessagesSent = false);
-      } else if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+      } else if (widget.initialMessage != null &&
+          widget.initialMessage!.isNotEmpty) {
         // For Maps-style navigation, pre-fill the text field
         _textController.text = widget.initialMessage!;
         _onTextChanged();
@@ -175,12 +184,132 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   final SupabaseRealtimeService _chatRealtime = SupabaseRealtimeService();
 
-  void _sendQuickMessage(String message) {
-    _textController.text = message;
-    _onTextChanged();
-    setState(() => _quickMessagesSent = true);
-    // Auto send
-    Future.microtask(() => _send());
+  String? _currentContextPointId() {
+    // contextId sudah int; konversi ke string supaya bisa dibandingkan.
+    return widget.contextId?.toString();
+  }
+
+  Future<void> _sendContextMessageIfNeeded() async {
+    if (widget.contextTitle == null || widget.contextTitle!.isEmpty) return;
+
+    final currentPointId = _currentContextPointId();
+    if (currentPointId == null) return;
+
+    // Kirim konteks kalau belum pernah dikirim untuk pointId ini.
+    if (_contextMessageSentForPointId == currentPointId) return;
+
+    final title = widget.contextTitle!.trim();
+    final summary = (widget.contextSummary ?? '').trim();
+
+    // Format 1 pesan teks: judul + rangkuman konteks
+    final contextBody = [
+      '📍 TITIK INFO',
+      title,
+      if (summary.isNotEmpty) '— $summary',
+    ].join('\n');
+
+    if (_conversationId == null) return;
+
+    // Kirim context message sebagai pesan chat juga
+    try {
+      setState(() {
+        _contextMessageSentForPointId = currentPointId;
+      });
+
+      await _repo.sendMessage(
+        conversationId: _conversationId!,
+        body: contextBody,
+        senderId: ref.read(authProvider).user?.id ?? '',
+      );
+      await _repo.markAsRead(conversationId: _conversationId!);
+    } catch (_) {
+      // Jangan blokir quick message; context hanya best-effort
+      setState(() {
+        _contextMessageSentForPointId = null;
+      });
+    }
+  }
+
+  Future<void> _sendQuickMessage(String message) async {
+    if (_conversationId == null) return;
+
+    final quickText = message.trim();
+    final hasContext = widget.contextTitle?.trim().isNotEmpty ?? false;
+
+    // 1 pesan saja: Titik Info + quick message digabung.
+    final combinedBody = hasContext
+        ? [
+            '📍 TITIK INFO',
+            widget.contextTitle!.trim(),
+            if ((widget.contextSummary ?? '').trim().isNotEmpty)
+              '— ${widget.contextSummary!.trim()}',
+            '',
+            quickText,
+          ].where((e) => e.toString().trim().isNotEmpty).join('\n')
+        : quickText;
+
+    final tempMsg = ChatMessageDto(
+      id: -DateTime.now().millisecondsSinceEpoch,
+      conversationId: _conversationId!,
+      senderId: ref.read(authProvider).user?.id ?? '',
+      body: combinedBody,
+      createdAt: DateTime.now(),
+    );
+
+    setState(() {
+      _sending = true;
+      _messages = [..._messages, tempMsg];
+      _textController.clear();
+      _quickMessagesSent = true;
+      _quickMessagesSentForPointId = _currentContextPointId();
+    });
+    _scrollToBottom();
+
+    try {
+      final confirmed = await _repo.sendMessage(
+        conversationId: _conversationId!,
+        body: combinedBody,
+        senderId: tempMsg.senderId,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        final idx = _messages.indexWhere((m) => m.id == tempMsg.id);
+        if (idx >= 0) {
+          final updated = List<ChatMessageDto>.from(_messages);
+          updated[idx] = confirmed;
+          _messages = updated;
+        } else if (!_messages.any((m) => m.id == confirmed.id)) {
+          _messages = [..._messages, confirmed];
+        }
+        _sending = false;
+      });
+
+      _scrollToBottom();
+      await _repo.markAsRead(conversationId: _conversationId!);
+
+      // Setelah dikirim, sembunyikan quick card
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages = _messages.where((m) => m.id != tempMsg.id).toList();
+        _sending = false;
+        _quickMessagesSent = false;
+        _quickMessagesSentForPointId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengirim pesan: $e'),
+          backgroundColor: AppColors.urgencyHigh,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          margin: const EdgeInsets.all(12),
+        ),
+      );
+    }
   }
 
   void _subscribeRealtime(int conversationId) {
@@ -477,9 +606,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           // Quick Messages Card — Shopee-style, tampil ketika dibuka dari titik
           if (widget.contextTitle != null &&
               widget.contextTitle!.isNotEmpty &&
-              !_quickMessagesSent &&
               _conversationId != null &&
-              _messages.isEmpty)
+              // pada request point berbeda, quick card boleh tampil lagi
+              (_quickMessagesSentForPointId != _currentContextPointId()) &&
+              // tetap tampil saat pertama kali, tapi tidak mengandalkan _messages.isEmpty
+              true)
             _QuickMessageCard(
               title: widget.contextTitle!,
               summary: widget.contextSummary,
@@ -494,6 +625,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             )
           else if (widget.contextTitle != null &&
               widget.contextTitle!.isNotEmpty &&
+              // banner konteks tampil setelah quick card dipakai
               (_quickMessagesSent || _messages.isNotEmpty))
             _ContextBanner(
               title: widget.contextTitle!,
@@ -576,7 +708,8 @@ class _QuickMessageCard extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: AppColors.primaryContainer,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
               children: [

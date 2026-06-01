@@ -517,36 +517,36 @@ class _PointBottomSheet extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 16),
-          const Text(
-            'Tanya ke Komunitas',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-          ),
-          const SizedBox(height: 10),
+          // const SizedBox(height: 16),
+          // const Text(
+          //   'Tanya ke Komunitas',
+          //   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          // ),
+          // const SizedBox(height: 10),
 
-          // Quick message chips (Shopee-style)
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _quickMessages.map((msg) {
-              return GestureDetector(
-                onTap: () => _openChat(context, initialMessage: msg),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Text(
-                    msg,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+          // // Quick message chips (Shopee-style)
+          // Wrap(
+          //   spacing: 8,
+          //   runSpacing: 8,
+          //   children: _quickMessages.map((msg) {
+          //     return GestureDetector(
+          //       onTap: () => _openChat(context, initialMessage: msg),
+          //       child: Container(
+          //         padding:
+          //             const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          //         decoration: BoxDecoration(
+          //           color: Colors.white,
+          //           borderRadius: BorderRadius.circular(20),
+          //           border: Border.all(color: AppColors.border),
+          //         ),
+          //         child: Text(
+          //           msg,
+          //           style: const TextStyle(fontSize: 12),
+          //         ),
+          //       ),
+          //     );
+          //   }).toList(),
+          // ),
 
           const SizedBox(height: 16),
           Row(
@@ -567,13 +567,13 @@ class _PointBottomSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _openChat(context),
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                  label: const Text('Hubungi Komunitas'),
-                ),
-              ),
+              // Expanded(
+              //   child: ElevatedButton.icon(
+              //     onPressed: () => _openChat(context),
+              //     icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+              //     label: const Text('Hubungi Komunitas'),
+              //   ),
+              // ),
             ],
           ),
         ],
