@@ -12,7 +12,6 @@ import '../../shared/widgets/app_widgets.dart';
 
 import '../donation/donation_history_screen.dart';
 import 'account_settings_screen.dart';
-import 'edit_profile_dialog.dart';
 import 'user_activity_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -168,19 +167,6 @@ class _ProfileContentState extends State<_ProfileContent> {
       return _ProfileStats(
         activityCount: user.donationCount,
         earnedPoints: user.communityPoints,
-      );
-    }
-  }
-
-  Future<void> _openEditProfileDialog(BuildContext context,
-      {required UserModel user}) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => EditProfileDialog(user: user),
-    );
-    if (result == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profil berhasil diperbarui')),
       );
     }
   }
