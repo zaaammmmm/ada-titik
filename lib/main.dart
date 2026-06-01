@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/app_globals.dart';
+import 'core/constants/app_config.dart';
 import 'core/router/app_router.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
@@ -11,11 +13,16 @@ import 'core/theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Supabase init (required for Supabase Realtime)
+  // Supabase init (WAJIB untuk Supabase Realtime).
+  // Kredensial diambil dari AppConfig (punya default + bisa di-override
+  // via --dart-define). Assert agar gagal keras kalau kosong, bukan diam.
+  assert(
+    AppConfig.supabaseUrl.isNotEmpty && AppConfig.supabaseAnonKey.isNotEmpty,
+    'SUPABASE_URL / SUPABASE_ANON_KEY kosong — realtime tidak akan jalan.',
+  );
   await Supabase.initialize(
-    url: const String.fromEnvironment('SUPABASE_URL', defaultValue: ''),
-    anonKey:
-        const String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: ''),
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
   );
 
   // Inisialisasi notifikasi lokal (buat Android notification channel dll.)
@@ -44,6 +51,7 @@ class AdaTitikApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'Ada Titik?',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: rootMessengerKey,
       theme: AppTheme.lightTheme,
       routerConfig: router,
     );

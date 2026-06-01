@@ -7,6 +7,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/supabase_session.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -53,6 +54,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   Future<void> _bootstrap() async {
     // Init auth (cek token tersimpan → auto-login jika ada)
     await ref.read(authProvider.notifier).init();
+
+    // Untuk akun yang sudah login: pulihkan + refresh Supabase token agar
+    // realtime authenticated (RLS notifications/chat) tanpa harus login ulang.
+    if (ref.read(authProvider).isAuthed) {
+      await SupabaseSession.restore();
+    }
 
     // Minta izin notifikasi hanya SEKALI saat pertama kali buka app
     await _requestNotificationPermissionOnce();
@@ -141,7 +148,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                 ),
                 const SizedBox(height: 200),
                 Text(
-                  'EMPOWERING LOCAL IMPACT',
+                  'GERAKKAN KEBAIKAN DI SEKITARMU',
                   style: AppTextStyles.captionUppercase,
                 ),
                 const SizedBox(height: 24),

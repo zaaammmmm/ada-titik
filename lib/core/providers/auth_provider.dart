@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/auth_storage.dart';
+import '../../core/services/supabase_session.dart';
 import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 
@@ -27,12 +28,15 @@ class AuthState {
     UserModel? user,
     bool? loading,
     String? error,
+    bool clearError = false,
   }) {
     return AuthState(
       token: token ?? this.token,
       user: user ?? this.user,
       loading: loading ?? this.loading,
-      error: error,
+      // Tanpa ini, setiap copyWith tanpa `error:` diam-diam menghapus error
+      // yang sudah di-set sebelumnya (bug: pesan error tertelan).
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -72,7 +76,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> refreshProfile() async {
-    state = state.copyWith(loading: true, error: null);
+    state = state.copyWith(loading: true, clearError: true);
     final token = await AuthStorage.readToken();
     if (token == null || token.isEmpty) {
       state = const AuthState();
@@ -89,6 +93,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     await AuthStorage.clear();
+    await SupabaseSession.clear();
     _initCalled = false;
     state = const AuthState(loading: false);
   }

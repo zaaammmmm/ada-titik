@@ -71,9 +71,10 @@ class DonationRepository {
         data['avatar_url']?.toString() ?? data['avatarUrl']?.toString();
     final bio = data['bio']?.toString() ?? data['about']?.toString();
 
-    final rawRole =
-        data['role']?.toString() ?? data['type']?.toString() ?? 'donatur';
-    final role = rawRole.toLowerCase();
+    // JANGAN fallback ke data['type'] (itu UserType UI: individu/organisasi),
+    // karena komunitas yang field 'role'-nya sesaat kosong bisa salah jadi
+    // donatur → routing & alert role keliru. Backend SELALU mengirim 'role'.
+    final role = (data['role']?.toString() ?? 'donatur').toLowerCase();
 
     final type = switch (role) {
       'komunitas' => UserType.organisasi,
@@ -136,6 +137,38 @@ class DonationRepository {
     final data = (body?['data'] as List?) ?? [];
 
     return data.whereType<Map<String, dynamic>>().map(_mapActivity).toList();
+  }
+
+  /// Total poin ASLI dari backend (GET /api/users/points → data.total_points).
+  /// Menggantikan kalkulasi poin yang dikarang di sisi UI (string-matching judul).
+  Future<int> getMyPointsTotal() async {
+    try {
+      final res = await ApiClient.get<Map<String, dynamic>>(
+        '/api/users/points',
+        query: {'page': 1, 'limit': 1},
+      );
+      final data = res.data?['data'];
+      if (data is Map) {
+        return int.tryParse(data['total_points']?.toString() ?? '') ?? 0;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  /// Jumlah aktivitas ASLI dari pagination.total backend, bukan hasil
+  /// menghitung ulang dengan heuristik judul di klien.
+  Future<int> getActivityTotal() async {
+    try {
+      final res = await ApiClient.get<Map<String, dynamic>>(
+        '/api/users/activity',
+        query: {'page': 1, 'limit': 1},
+      );
+      final pag = res.data?['pagination'];
+      if (pag is Map) {
+        return int.tryParse(pag['total']?.toString() ?? '') ?? 0;
+      }
+    } catch (_) {}
+    return 0;
   }
 
   /// Donasi Saya khusus untuk role donatur.
@@ -260,14 +293,24 @@ class DonationRepository {
     final lowerStatus = status.toLowerCase();
     final lowerText = '${title.toLowerCase()} ${subtitle.toLowerCase()}';
 
-    if (lowerType.contains('participant_accepted') || lowerType.contains('accepted')) {
+    // Cek RATING dulu: tipe 'rating_given' membawa point_status milik titik
+    // (mis. 'Completed'), jadi kalau cek status duluan, rating salah dilabeli
+    // 'success' (seolah user menyelesaikan donasi).
+    if (lowerType.contains('rating')) {
+      return 'rating';
+    }
+    if (lowerType.contains('participation_completed') ||
+        lowerType == 'participant_completed') {
+      return 'success';
+    }
+    if (lowerType.contains('accepted')) {
       return 'participant_accepted';
+    }
+    if (lowerType.contains('participation') || lowerText.contains('donasi')) {
+      return 'donation';
     }
     if (lowerStatus.contains('complete') || lowerStatus.contains('selesai')) {
       return 'success';
-    }
-    if (lowerType.contains('rating') || lowerText.contains('donasi')) {
-      return 'donation';
     }
     return 'request';
   }
@@ -690,33 +733,23 @@ class DonationRepository {
   }
 
 
-  /// Tutup titik secara manual (owner komunitas).
-  /// Memanggil PATCH /api/donations/:id/status dengan status 'Closed'.
-  /// Titik yang ditutup tidak perlu geo-fencing.
-  Future<void> closePoint({required String pointId}) async {
-    final res = await ApiClient.patch<Map<String, dynamic>>(
-      '/api/donations/$pointId/status',
-      data: {'status': 'Closed'},
+  /// Tutup (selesaikan) titik secara final oleh owner komunitas.
+  ///
+  /// CATATAN: backend HANYA mengenal status 'Open' / 'On Progress' / 'Completed'
+  /// (tidak ada 'Closed'). Menutup = menyelesaikan, jadi memerlukan owner +
+  /// geo-fencing ≤100m. Versi lama mengirim 'Closed' → selalu ditolak validator
+  /// (400) sehingga komunitas TIDAK PERNAH bisa menutup titik.
+  Future<void> closePoint({
+    required String pointId,
+    required double userLat,
+    required double userLng,
+  }) async {
+    await updateStatus(
+      requestId: pointId,
+      status: RequestStatus.completed,
+      userLat: userLat,
+      userLng: userLng,
     );
-    final statusCode = res.statusCode ?? 0;
-    if (statusCode == 403) {
-      throw Exception(res.data?['error']?.toString() ?? 'Akses ditolak');
-    }
-    if (statusCode != 200) {
-      // Fallback: beberapa backend menggunakan 'completed' untuk manual close
-      if (statusCode == 422 || statusCode == 400) {
-        // Coba dengan Completed tanpa koordinat (backend mungkin tidak wajibkan geo)
-        final res2 = await ApiClient.patch<Map<String, dynamic>>(
-          '/api/donations/$pointId/status',
-          data: {'status': 'Completed'},
-        );
-        if ((res2.statusCode ?? 0) == 200) return;
-      }
-      final msg = res.data?['error']?.toString() ??
-          res.data?['message']?.toString() ??
-          'Gagal menutup titik (${statusCode})';
-      throw Exception(msg);
-    }
   }
 
   // --- Ratings ---

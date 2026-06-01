@@ -7,6 +7,7 @@
 // - Toast "Ada postingan baru!" muncul saat realtime event masuk.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -108,6 +109,7 @@ class _CommunityScreenState extends State<CommunityScreen>
   }
 
   Future<void> _handleLike(String postId) async {
+    HapticFeedback.mediumImpact(); // feedback taktil saat like
     final current = _likedByMeByPostId[postId];
     final currentCount = _likesCountByPostId[postId];
 
@@ -274,17 +276,11 @@ class _CommunityScreenState extends State<CommunityScreen>
         }).toList();
 
         if (appliedFeed.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Belum ada postingan di tab ini.',
-                textAlign: TextAlign.center,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
+          return const EmptyState(
+            icon: Icons.forum_rounded,
+            title: 'Jadi yang pertama bercerita',
+            message:
+                'Belum ada postingan di sini. Bagikan kabar, pertanyaan, atau kisah baikmu.',
           );
         }
 

@@ -132,14 +132,17 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         final prevState = _myParticipation?['state']?.toString();
         setState(() => _myParticipation = p);
 
-        // Tampilkan rating prompt hanya sekali: cek in-memory + SharedPreferences.
+        // Tampilkan selebrasi + rating prompt SEKALI, saat donasi benar-benar
+        // SELESAI (state 'completed') — bukan saat 'accepted'. Poin (+50) baru
+        // diberikan backend pada transisi accepted→completed, jadi memunculkan
+        // "poin sudah ditambahkan" di 'accepted' itu keliru (poin belum ada).
         final newState = p?['state']?.toString().toLowerCase();
         final alreadyShownPersistent = await _hasRatingPromptBeenShown();
 
         if (!_hasShownRatingPrompt &&
             !alreadyShownPersistent &&
-            newState == 'accepted' &&
-            prevState?.toLowerCase() != 'accepted') {
+            newState == 'completed' &&
+            prevState?.toLowerCase() != 'completed') {
           _hasShownRatingPrompt = true;
           await _markRatingPromptShown();
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -157,10 +160,10 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Berangkat di-Accept! 🎉'),
+        title: const Text('Donasi Selesai! +50 Poin 🎉'),
         content: const Text(
-          'Komunitas telah menerima keberangkatan Anda. '
-          'Poin sudah ditambahkan ke akun Anda. '
+          'Terima kasih! Donasi Anda telah diselesaikan komunitas dan '
+          '50 poin sudah masuk ke akun Anda. '
           'Bagikan pengalaman Anda dengan memberikan rating.',
         ),
         actions: [
@@ -631,11 +634,12 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   Widget _buildRatingsSection(DonationRequest request, UserModel? currentUser) {
     final participationState =
         _myParticipation?['state']?.toString().toLowerCase();
-    final hasAcceptedParticipant =
-        participationState == 'accepted' || participationState == 'completed';
+    // Rating hanya setelah donasi BENAR-BENAR selesai (completed), bukan saat
+    // baru 'accepted'. Konsisten dengan saat poin diberikan backend.
+    final hasCompletedParticipation = participationState == 'completed';
     final canRate = currentUser != null &&
         currentUser.role.toLowerCase() == 'donatur' &&
-        (request.status == RequestStatus.completed || hasAcceptedParticipant);
+        (request.status == RequestStatus.completed || hasCompletedParticipation);
 
     // Cek apakah user sudah pernah memberi rating (jika sudah ada di _ratingsFuture)
     final alreadyRated = _myParticipation?['has_rated'] == true ||
@@ -1103,9 +1107,14 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                 children: [
                   Icon(Icons.check_rounded, color: AppColors.primary, size: 20),
                   const SizedBox(width: 8),
-                  Text('Diterima!',
-                      style: AppTextStyles.titleSmall
-                          .copyWith(color: AppColors.primary)),
+                  Flexible(
+                    child: Text(
+                      'Diterima! Poin masuk saat donasi diselesaikan komunitas.',
+                      style: AppTextStyles.bodySmall
+                          .copyWith(color: AppColors.primary, fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ],
               ),
             ),

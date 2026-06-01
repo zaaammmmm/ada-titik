@@ -146,7 +146,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Active Requests'),
+        title: const Text('Permintaan Bantuan'),
         leading: const BackButton(),
       ),
       body: Column(
@@ -157,7 +157,7 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Active Requests', style: AppTextStyles.headlineLarge),
+                Text('Permintaan Bantuan', style: AppTextStyles.headlineLarge),
                 const SizedBox(height: 4),
                 Text(
                   'Temukan anggota komunitas yang membutuhkan bantuan di sekitar Anda.',
@@ -169,9 +169,9 @@ class _ActiveRequestsScreenState extends State<ActiveRequestsScreen> {
                 // View toggle
                 Row(
                   children: [
-                    _viewToggle(true, Icons.list_rounded, 'List'),
+                    _viewToggle(true, Icons.list_rounded, 'Daftar'),
                     const SizedBox(width: 8),
-                    _viewToggle(false, Icons.map_outlined, 'Map'),
+                    _viewToggle(false, Icons.map_outlined, 'Peta'),
                   ],
                 ),
                 const SizedBox(height: 12),

@@ -45,7 +45,7 @@ class ProfileScreen extends ConsumerWidget {
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  'Failed to load profile',
+                  'Gagal memuat profil',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -103,65 +103,20 @@ class _ProfileContentState extends State<_ProfileContent> {
   }
 
   Future<_ProfileStats> _loadStats() async {
+    // Pakai DATA ASLI backend, bukan mengarang poin via string-matching judul
+    // aktivitas. Poin = users.points (sumber tunggal); jumlah aktivitas =
+    // pagination.total dari /api/users/activity.
     try {
-      final isKomunitas = user.role.toLowerCase() == 'komunitas';
-      final activities = await _repo.getUserActivity(limit: 100);
-
-      int activityCount = 0;
-      int earnedPoints = 0;
-
-      for (final a in activities) {
-        final type = a.iconType.toLowerCase();
-        final title = a.title.toLowerCase();
-
-        if (type == 'rating' ||
-            title.contains('rating') ||
-            title.contains('ulasan')) {
-          activityCount++;
-          earnedPoints += 15;
-        } else if (type == 'participant_accepted' ||
-            type == 'donation' ||
-            title.contains('diterima') ||
-            title.contains('accept') ||
-            title.contains('berangkat')) {
-          activityCount++;
-          earnedPoints += 50;
-        } else if (type == 'success' ||
-            title.contains('selesai') ||
-            title.contains('complete') ||
-            title.contains('berhasil')) {
-          activityCount++;
-          earnedPoints += 100;
-        } else if (isKomunitas &&
-            (type == 'donation_managed' ||
-                title.contains('titik') ||
-                title.contains('membuat') ||
-                title.contains('buat'))) {
-          activityCount++;
-          earnedPoints += 30;
-        } else if (isKomunitas &&
-            (type == 'community_post' ||
-                title.contains('postingan') ||
-                title.contains('posting') ||
-                title.contains('feed'))) {
-          activityCount++;
-          earnedPoints += 10;
-        } else if (isKomunitas &&
-            (title.contains('menyelesaikan') ||
-                title.contains('verifikasi') ||
-                title.contains('konfirmasi'))) {
-          activityCount++;
-          earnedPoints += 25;
-        }
-      }
-
-      final backendPoints = user.communityPoints;
-      final finalPoints =
-          earnedPoints > backendPoints ? earnedPoints : backendPoints;
+      final results = await Future.wait([
+        _repo.getMyPointsTotal(),
+        _repo.getActivityTotal(),
+      ]);
+      final points = results[0];
+      final activityTotal = results[1];
 
       return _ProfileStats(
-        activityCount: activityCount > 0 ? activityCount : user.donationCount,
-        earnedPoints: finalPoints,
+        activityCount: activityTotal > 0 ? activityTotal : user.donationCount,
+        earnedPoints: points > 0 ? points : user.communityPoints,
       );
     } catch (_) {
       return _ProfileStats(
@@ -183,7 +138,7 @@ class _ProfileContentState extends State<_ProfileContent> {
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('Your Impact', style: AppTextStyles.headlineMedium),
+            child: Text('Dampakmu', style: AppTextStyles.headlineMedium),
           ),
           const SizedBox(height: 12),
           _buildImpactCards(),
@@ -193,7 +148,7 @@ class _ProfileContentState extends State<_ProfileContent> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Recent Activity', style: AppTextStyles.headlineMedium),
+                Text('Aktivitas Terbaru', style: AppTextStyles.headlineMedium),
                 TextButton(
                   onPressed: () => Navigator.push(
                     context,
@@ -202,7 +157,7 @@ class _ProfileContentState extends State<_ProfileContent> {
                     ),
                   ),
                   child: Text(
-                    'View All',
+                    'Lihat Semua',
                     style: AppTextStyles.labelMedium.copyWith(
                       color: AppColors.primary,
                       fontWeight: FontWeight.w700,
@@ -307,7 +262,7 @@ class _ProfileContentState extends State<_ProfileContent> {
                 }
               },
               icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('Edit Profile'),
+              label: const Text('Edit Profil'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -386,7 +341,7 @@ class _ProfileContentState extends State<_ProfileContent> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
             child: Text(
-              'Quick Links',
+              'Akses Cepat',
               style: AppTextStyles.titleSmall.copyWith(
                 color: AppColors.textSecondary,
               ),
@@ -445,7 +400,7 @@ class _ProfileContentState extends State<_ProfileContent> {
             children: [
               _ImpactCard(
                 icon: Icons.local_activity_rounded,
-                label: 'Activity Count',
+                label: 'Aktivitas',
                 value: activityValue,
                 sub: isKomunitas
                     ? 'Rating diberikan + titik dibuat + postingan + accept'
@@ -511,12 +466,23 @@ class _ProfileContentState extends State<_ProfileContent> {
                   ),
                 ],
               ),
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Belum ada aktivitas terbaru. Silakan ulangi lagi nanti.',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(Icons.eco_rounded,
+                      color: AppColors.primary.withOpacity(0.7), size: 34),
+                  const SizedBox(height: 10),
+                  Text('Perjalananmu baru dimulai',
+                      style: AppTextStyles.titleSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Donasi & kontribusi pertamamu akan muncul di sini.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -634,7 +600,7 @@ class _ProfileContentState extends State<_ProfileContent> {
             ),
           ),
           child: Text(
-            'Logout',
+            'Keluar',
             style: AppTextStyles.buttonMedium.copyWith(
               fontWeight: FontWeight.w700,
             ),

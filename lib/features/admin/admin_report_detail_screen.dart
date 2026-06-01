@@ -119,9 +119,12 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
         _report['title'] ?? _report['reason'] ?? 'Laporan titik bantuan');
     final description =
         _string(_report['description'] ?? _report['reason'] ?? '-');
-    final reportedBy = _string(_report['reported_by'] ??
+    final reportedBy = _string(_report['reporter_name'] ??
+        _report['reporter_email'] ??
+        _report['reported_by'] ??
         _report['user_email'] ??
         _report['user_name']);
+    final ownerName = _string(_report['owner_name']);
 
     final isPending = _report['status']?.toString().toLowerCase() == 'pending';
 
@@ -167,6 +170,8 @@ class _AdminReportDetailScreenState extends State<AdminReportDetailScreen> {
                       _detailChip('Dibuat', _createdAt()),
                       if (reportedBy != '-')
                         _detailChip('Dilaporkan oleh', reportedBy),
+                      if (ownerName != '-')
+                        _detailChip('Pemilik titik', ownerName),
                     ],
                   ),
                   const SizedBox(height: 16),

@@ -44,6 +44,8 @@ class UserModel {
   });
 
   bool get isAdmin => role.toLowerCase() == 'admin';
+  bool get isKomunitas => role.toLowerCase() == 'komunitas';
+  bool get isDonatur => role.toLowerCase() == 'donatur';
 }
 
 class DonationRequest {
