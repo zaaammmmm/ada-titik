@@ -181,7 +181,7 @@ Titik bantuan ditampilkan dalam peta dengan warna berdasarkan urgensi:
 <b>Ahmad Zamroni Trikarta</b><br>
 <i>Project Manager</i><br>
 <i>Fullstack Developer</i>
-<a href="[https://github.com/zaaammmmm](https://github.com/zaaammmmm)">@zaaammmmm</a>
+<a href="https://github.com/zaaammmmm">@zaaammmmm</a>
 </td>
 <td align="center" width="25%">
 <b>Agung Nugraha</b><br>
