@@ -13,6 +13,8 @@ import '../../features/community/data/community_repository.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/donation/add_titik_screen.dart';
 import '../../features/donation/data/donation_repository.dart';
+import '../../features/notification/data/notification_repository.dart';
+import '../../core/services/notification_service.dart';
 import '../../features/donation/request_detail_screen.dart';
 import '../../features/maps/maps_screen.dart';
 import '../../shared/models/models.dart';
@@ -33,8 +35,10 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   bool _hasUnreadCommunity = false;
   int _unreadChatCount = 0;
 
-  // Pakai instance berbeda agar masing-masing subscription tidak saling override
+  // Realtime instances
   final SupabaseRealtimeService _realtimeConv = SupabaseRealtimeService();
+  final SupabaseRealtimeService _realtimeNotif = SupabaseRealtimeService();
+  final SupabaseRealtimeService _realtimeChatNotif = SupabaseRealtimeService();
 
   @override
   void initState() {
@@ -54,12 +58,47 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
           if (mounted) _refreshChatUnread();
         },
       );
+
+      // Subscribe realtime notifications — agar badge langsung update tanpa refresh manual
+      await _realtimeNotif.subscribeToNotifications(
+        currentUserId: userId,
+        onInsert: (payload) {
+          if (mounted) _refreshNotificationUnread();
+        },
+      );
+
+      // Subscribe to ALL incoming chat messages for local push notifications (background)
+      await _realtimeChatNotif.subscribeToAllChatMessages(
+        currentUserId: userId,
+        onNewMessage: (payload) async {
+          final body = payload['body']?.toString() ?? 'Pesan baru';
+          final convId = payload['conversation_id']?.toString() ?? '';
+          await NotificationService.instance.showChatMessage(
+            conversationId: convId,
+            senderName: 'Pesan Baru',
+            message: body,
+          );
+          // Also refresh chat badge
+          if (mounted) _refreshChatUnread();
+        },
+      );
     });
   }
 
   @override
   void dispose() {
     super.dispose();
+  }
+
+  int _unreadNotifCount = 0;
+
+  Future<void> _refreshNotificationUnread() async {
+    try {
+      final notifRepo = const NotificationRepository();
+      final notifs = await notifRepo.getUserNotifications(page: 1, limit: 50, unread: true);
+      if (!mounted) return;
+      setState(() => _unreadNotifCount = notifs.length);
+    } catch (_) {}
   }
 
   Future<void> _refreshChatUnread() async {
@@ -199,7 +238,11 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         },
         onBerdonasi: () {
           Navigator.pop(ctx);
-          setState(() => _currentIndex = 3);
+          if (!context.mounted) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MapsScreen()),
+          );
         },
       ),
     );
@@ -267,7 +310,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       ),
       child: SafeArea(
         child: SizedBox(
-          height: 64,
+          height: 68,
           child: Row(
             children: [
               _buildNavItem(

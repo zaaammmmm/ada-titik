@@ -30,7 +30,8 @@ class _UnitChip extends StatelessWidget {
   final String label;
   final bool isSelected;
   final VoidCallback onTap;
-  const _UnitChip({required this.label, required this.isSelected, required this.onTap});
+  const _UnitChip(
+      {required this.label, required this.isSelected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -453,43 +454,63 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Photo Evidence
-                  _sectionLabel('Photo Evidence'),
+                  _sectionLabel('Bukti Foto'),
                   const SizedBox(height: 8),
                   _photoUploadBox(),
                   const SizedBox(height: 18),
                   // Title
-                  _sectionLabel('Title of Need'),
+                  _sectionLabel('Kebutuhan'),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _titleController,
                     decoration: const InputDecoration(
-                      hintText: 'e.g., Bottled water needed for 5 families',
+                      hintText: 'cth, Dibutuhkan air bersih untuk 100 keluarga',
                       filled: true,
                       fillColor: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 14),
                   // Category
-                  _sectionLabel('Category'),
+                  _sectionLabel('Kategori'),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: _categories.map((c) {
                       final isSelected = _selectedCategory == c;
-                      return ChoiceChip(
-                        label: Text(c),
-                        selected: isSelected,
-                        onSelected: (_) =>
-                            setState(() => _selectedCategory = c),
-                        selectedColor: AppColors.primary.withOpacity(0.12),
-                        backgroundColor: Colors.white,
+                      return GestureDetector(
+                        onTap: () => setState(() => _selectedCategory = c),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color:
+                                isSelected ? AppColors.primary : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Text(
+                            c,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.grey.shade700,
+                            ),
+                          ),
+                        ),
                       );
                     }).toList(),
                   ),
                   const SizedBox(height: 14),
                   // Goals
-                  _sectionLabel('Goals / Target'),
+                  _sectionLabel('Target'),
                   const SizedBox(height: 8),
                   // Unit selector (Rp / Kg)
                   Row(
@@ -512,7 +533,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                     controller: _goalController,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      hintText: _goalUnit == 'Rp' ? 'e.g., 5000000' : 'e.g., 50',
+                      hintText:
+                          _goalUnit == 'Rp' ? 'e.g., 5000000' : 'e.g., 50',
                       prefixText: _goalUnit == 'Rp' ? 'Rp ' : null,
                       suffixText: _goalUnit == 'Kg' ? ' Kg' : null,
                       filled: true,
@@ -521,13 +543,13 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   ),
                   const SizedBox(height: 14),
                   // Description
-                  _sectionLabel('Description'),
+                  _sectionLabel('Deskripsi'),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _descriptionController,
                     maxLines: 4,
                     decoration: const InputDecoration(
-                      hintText: 'Provide details about the situation...',
+                      hintText: 'Berikan detail mengenai situasi tersebut...',
                       filled: true,
                       fillColor: Colors.white,
                       alignLabelWithHint: true,
@@ -535,7 +557,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                   ),
                   const SizedBox(height: 18),
                   // Location
-                  _sectionLabel('Location'),
+                  _sectionLabel('Lokasi'),
                   const SizedBox(height: 4),
                   if (!_locationSet)
                     Padding(

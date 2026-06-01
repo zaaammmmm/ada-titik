@@ -224,8 +224,9 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           contextType: 'donation_point',
           contextTitle: request.title,
           contextSummary:
-              '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"} · Target: ${request.goalUnit == 'Kg' ? '${request.goalAmount.toStringAsFixed(0)} Kg' : 'Rp ${request.goalAmount.toStringAsFixed(0)}'}',
-          initialMessage: message ?? defaultMessage,
+              '${request.category} · ${request.location.isNotEmpty ? request.location : "Lihat peta"} · Target: ${_inferUnitFromCategory(request.category) == 'Kg' ? '${request.goalAmount.toStringAsFixed(0)} Kg' : 'Rp ${request.goalAmount.toStringAsFixed(0)}'}',
+          initialMessage: message,
+          quickMessages: message != null ? null : _quickMessages,
         ),
       ),
     );
@@ -564,6 +565,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
     final collected = request.collectedAmount;
     final progress = goal > 0 ? (collected / goal).clamp(0.0, 1.0) : 0.0;
     final pct = (progress * 100).toStringAsFixed(0);
+    final unit = _inferUnitFromCategory(request.category);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -575,13 +577,13 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Progress Donasi', style: AppTextStyles.titleSmall),
+          Text('Progres Donasi', style: AppTextStyles.titleSmall),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Terkumpul: ${request.goalUnit == 'Kg' ? '${_formatNumber(collected)} Kg' : 'Rp ${_formatNumber(collected)}'}',
+                'Terkumpul: ${unit == 'Kg' ? '${_formatNumber(collected)} Kg' : 'Rp ${_formatNumber(collected)}'}',
                 style: AppTextStyles.bodySmall,
               ),
               Text(
@@ -603,7 +605,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Target: ${request.goalUnit == 'Kg' ? '${_formatNumber(goal)} Kg' : 'Rp ${_formatNumber(goal)}'}',
+            'Target: ${unit == 'Kg' ? '${_formatNumber(goal)} Kg' : 'Rp ${_formatNumber(goal)}'}',
             style: AppTextStyles.bodySmall
                 .copyWith(color: AppColors.textSecondary),
           ),
@@ -1101,7 +1103,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
                 children: [
                   Icon(Icons.check_rounded, color: AppColors.primary, size: 20),
                   const SizedBox(width: 8),
-                  Text('Diterima! Sedang On Progress',
+                  Text('Diterima!',
                       style: AppTextStyles.titleSmall
                           .copyWith(color: AppColors.primary)),
                 ],
@@ -1328,6 +1330,18 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       ),
       child: Text(label, style: AppTextStyles.labelSmall),
     );
+  }
+
+  String _inferUnitFromCategory(String category) {
+    final c = category.toLowerCase().trim();
+    // Backend tidak menyimpan unit kg/rp, jadi gunakan heuristik dari kategori.
+    if (c.contains('pangan') || c.contains('medis') || c.contains('pakaian')) {
+      return 'Kg';
+    }
+    if (c.contains('food') || c.contains('water') || c.contains('makanan')) {
+      return 'Kg';
+    }
+    return 'Rp';
   }
 
   String _formatNumber(double n) {

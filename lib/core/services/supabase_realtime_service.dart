@@ -153,7 +153,14 @@ class SupabaseRealtimeService {
           table: 'chat_conversations',
           callback: (payload) {
             final record = payload.newRecord;
-            if (record is Map<String, dynamic>) onUpsert(record);
+            if (record is Map<String, dynamic>) {
+              // Client-side filter: only handle conversations involving current user
+              final p1 = record['participant1_id']?.toString() ?? '';
+              final p2 = record['participant2_id']?.toString() ?? '';
+              if (p1 == currentUserId || p2 == currentUserId) {
+                onUpsert(record);
+              }
+            }
           },
         )
         .onPostgresChanges(
@@ -162,10 +169,57 @@ class SupabaseRealtimeService {
           table: 'chat_conversations',
           callback: (payload) {
             final record = payload.newRecord;
-            if (record is Map<String, dynamic>) onUpsert(record);
+            if (record is Map<String, dynamic>) {
+              final p1 = record['participant1_id']?.toString() ?? '';
+              final p2 = record['participant2_id']?.toString() ?? '';
+              if (p1 == currentUserId || p2 == currentUserId) {
+                onUpsert(record);
+              }
+            }
           },
         )
         .subscribe();
+  }
+
+  RealtimeChannel? _chatNotifChannel;
+
+  /// Subscribe to new chat messages for the current user (for background/global notifications).
+  /// This shows a local notification when a message arrives from any conversation.
+  Future<void> subscribeToAllChatMessages({
+    required String currentUserId,
+    required void Function(Map<String, dynamic> payload) onNewMessage,
+  }) async {
+    try {
+      await _chatNotifChannel?.unsubscribe();
+    } catch (_) {}
+
+    final supabase = Supabase.instance.client;
+    _chatNotifChannel = supabase.channel('chat_messages_all:$currentUserId');
+
+    _chatNotifChannel!
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'chat_messages',
+          callback: (payload) {
+            final record = payload.newRecord;
+            if (record is Map<String, dynamic>) {
+              // Only notify for messages NOT sent by the current user
+              final senderId = record['sender_id']?.toString() ?? '';
+              if (senderId != currentUserId) {
+                onNewMessage(record);
+              }
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  Future<void> unsubscribeFromAllChatMessages() async {
+    try {
+      await _chatNotifChannel?.unsubscribe();
+    } catch (_) {}
+    _chatNotifChannel = null;
   }
 
   // ─── Notifications ────────────────────────────────────────────────────────
@@ -236,5 +290,6 @@ class SupabaseRealtimeService {
     await dispose();
     await unsubscribeFromDonationPoints();
     await unsubscribeFromCommunityPosts();
+    await unsubscribeFromAllChatMessages();
   }
 }

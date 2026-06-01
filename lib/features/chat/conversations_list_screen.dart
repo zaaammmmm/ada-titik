@@ -43,20 +43,8 @@ class _ConversationsListScreenState
       await realtime.subscribeToChatConversations(
         currentUserId: userId,
         onUpsert: (payload) {
-          if (!mounted) return;
-          final conv = _mapConversationFromRealtime(payload);
-          setState(() {
-            final idx = _convs.indexWhere((c) => c.id == conv.id);
-            if (idx >= 0) {
-              _convs = [
-                ..._convs.sublist(0, idx),
-                conv,
-                ..._convs.sublist(idx + 1),
-              ];
-            } else {
-              _convs = [conv, ..._convs];
-            }
-          });
+          // Re-load from API to get complete data (name, avatar, lastMessage)
+          if (mounted) _load();
         },
       );
     });

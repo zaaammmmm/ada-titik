@@ -16,7 +16,7 @@ import '../../core/services/notification_service.dart';
 import '../../core/services/permission_service.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
-import 'edit_profile_dialog.dart';
+import 'edit_profile_screen.dart';
 
 class AccountSettingsScreen extends ConsumerStatefulWidget {
   final UserModel user;
@@ -27,8 +27,7 @@ class AccountSettingsScreen extends ConsumerStatefulWidget {
       _AccountSettingsScreenState();
 }
 
-class _AccountSettingsScreenState
-    extends ConsumerState<AccountSettingsScreen> {
+class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
   // ── Email change ──────────────────────────────────────────────────────────
   bool _savingEmail = false;
 
@@ -47,7 +46,11 @@ class _AccountSettingsScreenState
 
   Future<void> _loadNotifState() async {
     final has = await NotificationService.instance.hasPermission();
-    if (mounted) setState(() { _notifEnabled = has; _loadingNotifState = false; });
+    if (mounted)
+      setState(() {
+        _notifEnabled = has;
+        _loadingNotifState = false;
+      });
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -68,8 +71,7 @@ class _AccountSettingsScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Ubah Email'),
         content: Form(
           key: formKey,
@@ -141,8 +143,8 @@ class _AccountSettingsScreenState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Ubah Password'),
           content: Form(
             key: formKey,
@@ -306,8 +308,7 @@ class _AccountSettingsScreenState
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Nonaktifkan Akun'),
         content: const Text(
           'Akun Anda akan dinonaktifkan sementara. '
@@ -321,8 +322,7 @@ class _AccountSettingsScreenState
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-                foregroundColor: Colors.white),
+                backgroundColor: Colors.orange, foregroundColor: Colors.white),
             child: const Text('Nonaktifkan'),
           ),
         ],
@@ -348,8 +348,7 @@ class _AccountSettingsScreenState
     final step1 = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             const Icon(Icons.warning_rounded, color: Colors.red),
@@ -383,8 +382,7 @@ class _AccountSettingsScreenState
     final step2 = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Konfirmasi Akhir'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -460,7 +458,7 @@ class _AccountSettingsScreenState
               onTap: () async {
                 final result = await showDialog<bool>(
                   context: context,
-                  builder: (_) => EditProfileDialog(user: widget.user),
+                  builder: (_) => EditProfileScreen(user: widget.user),
                 );
                 if (result == true && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -554,8 +552,8 @@ class _AccountSettingsScreenState
             Center(
               child: Text(
                 'Ada Titik! v1.0.0',
-                style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary),
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
               ),
             ),
             const SizedBox(height: 24),
@@ -611,10 +609,10 @@ class _SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveIconColor = iconColor ??
-        (isDestructive ? Colors.red : AppColors.textSecondary);
-    final effectiveTitleColor = titleColor ??
-        (isDestructive ? Colors.red : AppColors.textPrimary);
+    final effectiveIconColor =
+        iconColor ?? (isDestructive ? Colors.red : AppColors.textSecondary);
+    final effectiveTitleColor =
+        titleColor ?? (isDestructive ? Colors.red : AppColors.textPrimary);
 
     return Material(
       color: AppColors.surface,
@@ -724,8 +722,8 @@ class _SettingsTileSwitch extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary),
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary),
                   ),
                 ],
               ),

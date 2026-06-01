@@ -168,7 +168,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
             const SizedBox(height: 24),
 
             // Form
-            Text('Target Donasi (Rp)', style: AppTextStyles.titleSmall),
+            Text('Target Donasi', style: AppTextStyles.titleSmall),
+
             const SizedBox(height: 8),
             TextField(
               controller: _goalController,
@@ -176,8 +177,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Contoh: 5000000',
-                prefixText: 'Rp ',
+                hintText: 'Contoh: 50',
+                prefixText: null,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -187,7 +188,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
             ),
             const SizedBox(height: 16),
 
-            Text('Sudah Terkumpul (Rp)', style: AppTextStyles.titleSmall),
+            Text('Sudah Terkumpul', style: AppTextStyles.titleSmall),
+
             const SizedBox(height: 8),
             TextField(
               controller: _collectedController,
@@ -195,8 +197,8 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                hintText: 'Contoh: 1500000',
-                prefixText: 'Rp ',
+                hintText: 'Contoh: 50',
+                prefixText: null,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -328,7 +330,7 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Terkumpul: Rp ${_formatNumber(collected)}',
+                'Terkumpul: ${_inferUnitFromCategory(widget.request.category) == 'Kg' ? '${_formatNumber(collected)} Kg' : 'Rp ${_formatNumber(collected)}'}',
                 style: AppTextStyles.bodySmall,
               ),
               Text(
@@ -350,13 +352,24 @@ class _EditProgressScreenState extends State<EditProgressScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Target: Rp ${_formatNumber(goal)}',
+            'Target: ${_inferUnitFromCategory(widget.request.category) == 'Kg' ? '${_formatNumber(goal)} Kg' : 'Rp ${_formatNumber(goal)}'}',
             style: AppTextStyles.bodySmall
                 .copyWith(color: AppColors.textSecondary),
           ),
         ],
       ),
     );
+  }
+
+  String _inferUnitFromCategory(String category) {
+    final c = category.toLowerCase().trim();
+    if (c.contains('pangan') || c.contains('medis') || c.contains('pakaian')) {
+      return 'Kg';
+    }
+    if (c.contains('food') || c.contains('water') || c.contains('makanan')) {
+      return 'Kg';
+    }
+    return 'Rp';
   }
 
   String _formatNumber(double n) {

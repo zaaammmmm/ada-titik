@@ -14,6 +14,7 @@ import '../donation/donation_history_screen.dart';
 import 'account_settings_screen.dart';
 import 'edit_profile_dialog.dart';
 import 'user_activity_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -307,7 +308,7 @@ class _ProfileContentState extends State<_ProfileContent> {
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => AccountSettingsScreen(user: user),
+                    builder: (_) => EditProfileScreen(user: user),
                   ),
                 );
 

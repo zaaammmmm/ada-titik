@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/donation/request_detail_screen.dart';
 import '../../features/donation/departure_review_screen.dart';
 import '../../features/community/comments_screen.dart';
+import '../../features/community/feed_post_detail_screen.dart';
 import '../../features/community/data/community_repository.dart';
 import '../../features/donation/data/donation_repository.dart';
 
@@ -402,7 +403,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen>
                     }
 
                     if (item.postId != null && item.postId!.isNotEmpty) {
-                      // Navigate to community post detail
+                      // Navigate to FeedPostDetailScreen for post_liked / post_commented
                       if (!context.mounted) return;
                       final communityRepo = const CommunityRepository();
                       try {
@@ -411,17 +412,14 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen>
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => CommentsScreen(postId: item.postId!),
+                            builder: (_) => FeedPostDetailScreen(post: post),
                           ),
                         );
                       } catch (_) {
                         if (!context.mounted) return;
-                        // Fallback: buka community tab dengan post id
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CommentsScreen(postId: item.postId!),
-                          ),
+                        // Fallback jika gagal load post
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Postingan tidak ditemukan.')),
                         );
                       }
                     }

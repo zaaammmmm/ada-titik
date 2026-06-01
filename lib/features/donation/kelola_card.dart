@@ -10,6 +10,17 @@ class KelolaCard extends StatelessWidget {
   const KelolaCard(
       {super.key, required this.request, required this.onOpenDetail});
 
+  String _inferUnitFromCategory(String category) {
+    final c = category.toLowerCase().trim();
+    if (c.contains('pangan') || c.contains('medis') || c.contains('pakaian')) {
+      return 'Kg';
+    }
+    if (c.contains('food') || c.contains('water') || c.contains('makanan')) {
+      return 'Kg';
+    }
+    return 'Rp';
+  }
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -74,9 +85,11 @@ class KelolaCard extends StatelessWidget {
   Widget _progressRow() {
     final goal = request.goalAmount;
     final collected = request.collectedAmount;
+    final unit = _inferUnitFromCategory(request.category);
+
     if (goal <= 0) {
       return Text(
-        'Terkumpul: Rp ${collected.toStringAsFixed(0)}',
+        'Terkumpul: ${unit == 'Kg' ? '${collected.toStringAsFixed(0)} Kg' : 'Rp ${collected.toStringAsFixed(0)}'}',
         style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
       );
     }
@@ -86,7 +99,7 @@ class KelolaCard extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
-          'Terkumpul: Rp ${collected.toStringAsFixed(0)}',
+          'Terkumpul: ${unit == 'Kg' ? '${collected.toStringAsFixed(0)} Kg' : 'Rp ${collected.toStringAsFixed(0)}'}',
           style:
               AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
         ),

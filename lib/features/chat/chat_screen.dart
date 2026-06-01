@@ -21,6 +21,7 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String? contextSummary;
 
   final String? initialMessage;
+  final List<String>? quickMessages;
 
   const ChatScreen({
     super.key,
@@ -32,6 +33,7 @@ class ChatScreen extends ConsumerStatefulWidget {
     this.contextTitle,
     this.contextSummary,
     this.initialMessage,
+    this.quickMessages,
   });
 
   @override
@@ -52,6 +54,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _isTyping = false;
   bool _canLoadMore = false;
   bool _loadingMore = false;
+  bool _quickMessagesSent = false; // hide quick messages after first use
 
   int? _conversationId;
   List<ChatMessageDto> _messages = [];
@@ -104,6 +107,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _focusNode.dispose();
     _sendButtonController.dispose();
     _pollingTimer?.cancel();
+    _chatRealtime.dispose();
     super.dispose();
   }
 
@@ -143,12 +147,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       });
 
       await _repo.markAsRead(conversationId: conv.id);
-      _scrollToBottom(animated: false);
+      _scrollToBottomOnLoad();
 
-      // No.6 FIX: Pre-fill pesan awal dari konteks Maps (Shopee-style quick message)
-      if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+      // Auto-send context summary message when opened from a titik (Shopee-style)
+      // Only auto-send if this is a donation context with a title
+      if (widget.contextTitle != null && widget.contextTitle!.isNotEmpty) {
+        // Don't auto-send here; the quick message card handles the first message
+        // Just ensure quick messages are shown
+        setState(() => _quickMessagesSent = false);
+      } else if (widget.initialMessage != null && widget.initialMessage!.isNotEmpty) {
+        // For Maps-style navigation, pre-fill the text field
         _textController.text = widget.initialMessage!;
-        // Trigger UI update
         _onTextChanged();
       }
 
@@ -164,10 +173,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  final SupabaseRealtimeService _chatRealtime = SupabaseRealtimeService();
+
+  void _sendQuickMessage(String message) {
+    _textController.text = message;
+    _onTextChanged();
+    setState(() => _quickMessagesSent = true);
+    // Auto send
+    Future.microtask(() => _send());
+  }
+
   void _subscribeRealtime(int conversationId) {
     // Realtime subscription: append incoming message into UI.
-    // For now, we keep polling-free approach but still rely on backend insert event.
-    final realtime = SupabaseRealtimeService();
+    final realtime = _chatRealtime;
     realtime.subscribeToChatMessages(
       conversationId: conversationId.toString(),
       onInsert: (payload) {
@@ -188,8 +206,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         );
 
         if (!mounted) return;
+
+        // Ambil userId dari auth — skip pesan kita sendiri karena
+        // sudah di-handle di _send() via API response langsung.
+        final myId = ref.read(authProvider).user?.id ?? '';
+        if (newMessage.senderId == myId) return;
+
         setState(() {
-          _messages = [..._messages, newMessage];
+          // Deduplicate berdasarkan id
+          if (!_messages.any((m) => m.id == newMessage.id)) {
+            _messages = [..._messages, newMessage];
+          }
         });
         _scrollToBottom();
 
@@ -287,20 +314,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _scrollToBottom();
 
     try {
-      await _repo.sendMessage(
+      final confirmed = await _repo.sendMessage(
         conversationId: _conversationId!,
         body: body,
-      );
-
-      final msgs = await _repo.listMessages(
-        conversationId: _conversationId!,
-        limit: 50,
-        before: null,
+        senderId: tempMsg.senderId,
       );
 
       if (!mounted) return;
+      // Upgrade temp message ke pesan yang sudah dikonfirmasi API.
+      // Realtime tetap aktif untuk pesan dari lawan bicara,
+      // tapi pesan kita TIDAK bergantung pada realtime event.
       setState(() {
-        _messages = msgs;
+        final idx = _messages.indexWhere((m) => m.id == tempMsg.id);
+        if (idx >= 0) {
+          final updated = List<ChatMessageDto>.from(_messages);
+          updated[idx] = confirmed;
+          _messages = updated;
+        } else if (!_messages.any((m) => m.id == confirmed.id)) {
+          // Kalau sudah ditambahkan oleh realtime, skip duplikasi
+          _messages = [..._messages, confirmed];
+        }
         _sending = false;
       });
 
@@ -308,7 +341,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       await _repo.markAsRead(conversationId: _conversationId!);
     } catch (e) {
       if (!mounted) return;
-      // Remove temp message on failure
+      // Tandai temp message sebagai gagal (tampilkan tetap, beri tahu user)
       setState(() {
         _messages = _messages.where((m) => m.id != tempMsg.id).toList();
         _sending = false;
@@ -326,17 +359,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
   }
 
+  /// Scroll ke bawah saat layar pertama terbuka.
+  /// Butuh dua frame: frame pertama ListView baru dibuat, frame kedua
+  /// barulah maxScrollExtent mencerminkan konten yang sebenarnya.
+  void _scrollToBottomOnLoad() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      });
+    });
+  }
+
   void _scrollToBottom({bool animated = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      if (animated) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final max = _scrollController.position.maxScrollExtent;
+      if (animated && max > 0) {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
+          max,
+          duration: const Duration(milliseconds: 280),
           curve: Curves.easeOut,
         );
       } else {
-        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        _scrollController.jumpTo(max);
       }
     });
   }
@@ -428,8 +474,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
               ),
             ),
 
-          // Context banner — tampil kalau ada contextTitle (dibuka dari titik)
-          if (widget.contextTitle != null && widget.contextTitle!.isNotEmpty)
+          // Quick Messages Card — Shopee-style, tampil ketika dibuka dari titik
+          if (widget.contextTitle != null &&
+              widget.contextTitle!.isNotEmpty &&
+              !_quickMessagesSent &&
+              _conversationId != null &&
+              _messages.isEmpty)
+            _QuickMessageCard(
+              title: widget.contextTitle!,
+              summary: widget.contextSummary,
+              quickMessages: widget.quickMessages ??
+                  const [
+                    'Apakah titik bantuan ini masih aktif?',
+                    'Berapa banyak yang masih dibutuhkan?',
+                    'Saya ingin membantu, bagaimana caranya?',
+                    'Apakah ada kebutuhan lain selain yang tertulis?',
+                  ],
+              onSendQuick: _sendQuickMessage,
+            )
+          else if (widget.contextTitle != null &&
+              widget.contextTitle!.isNotEmpty &&
+              (_quickMessagesSent || _messages.isNotEmpty))
             _ContextBanner(
               title: widget.contextTitle!,
               summary: widget.contextSummary,
@@ -463,6 +528,148 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             isTyping: _isTyping,
             sendButtonController: _sendButtonController,
             onSend: _send,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Quick Message Card (Shopee-style) ────────────────────────────────────────
+
+class _QuickMessageCard extends StatelessWidget {
+  final String title;
+  final String? summary;
+  final List<String> quickMessages;
+  final void Function(String message) onSendQuick;
+
+  const _QuickMessageCard({
+    required this.title,
+    required this.quickMessages,
+    required this.onSendQuick,
+    this.summary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Titik summary card header
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.location_on_rounded,
+                      color: AppColors.primary, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: AppTextStyles.titleSmall.copyWith(
+                          color: AppColors.primary,
+                          fontSize: 13,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (summary != null && summary!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          summary!,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.primary.withOpacity(0.7),
+                            fontSize: 11,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Quick messages section
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Tanya ke Komunitas',
+                  style: AppTextStyles.titleSmall.copyWith(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: quickMessages.map((msg) {
+                    return GestureDetector(
+                      onTap: () => onSendQuick(msg),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppColors.border),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 3,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          msg,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontSize: 12,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
           ),
         ],
       ),

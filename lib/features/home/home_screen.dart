@@ -69,23 +69,69 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _loadUserPosition() async {
     final pos = await LocationService.instance.getCurrentPosition();
-    if (mounted && pos != null) setState(() => _userPosition = pos);
+    if (mounted && pos != null) {
+      setState(() {
+        _userPosition = pos;
+        // Re-compute urgent list with new position
+        _urgentFuture = _fetchUrgentRequests();
+      });
+    }
   }
 
+  final SupabaseRealtimeService _realtimeNotif = SupabaseRealtimeService();
+
   void _subscribeRealtime() {
+    // Subscribe donation points - refresh card urgent
     final supabase = SupabaseRealtimeService();
     supabase.subscribeToDonationPoints(onUpdate: () {
-      if (mounted) _refreshAll();
+      if (mounted) _refreshHome();
+    });
+
+    // Subscribe notification insert - refresh unread badge + stats realtime
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Re-read current userId from shared pref / auth (not riverpod here)
+      // We'll use a lightweight approach: subscribe after init
+      _subscribeNotifRealtime();
+    });
+  }
+
+  void _subscribeNotifRealtime() async {
+    try {
+      // Read userId from the profile we already loaded
+      final profile = await _profileFuture.catchError((_) => throw Exception());
+      final userId = profile.id;
+      if (userId.isEmpty) return;
+
+      await _realtimeNotif.subscribeToNotifications(
+        currentUserId: userId,
+        onInsert: (_) {
+          if (mounted) {
+            _loadUnreadCount();
+            // Also refresh stats as activity may have changed
+            setState(() => _statsFuture = _fetchStats());
+          }
+        },
+      );
+    } catch (_) {}
+  }
+
+  Future<void> _refreshHome() async {
+    if (!mounted) return;
+    setState(() {
+      _urgentFuture = _fetchUrgentRequests();
     });
   }
 
   Future<void> _refreshAll() async {
+    if (!mounted) return;
     setState(() {
       _profileFuture = _repo.getProfile();
       _urgentFuture = _fetchUrgentRequests();
       _statsFuture = _fetchStats();
     });
     _loadUnreadCount();
+    // Re-load user position to ensure distance labels are fresh
+    _loadUserPosition();
   }
 
   /// Hitung activity count & user points dari aktivitas nyata pengguna.
@@ -107,7 +153,9 @@ class _HomeScreenState extends State<HomeScreen>
         final title = a.title.toLowerCase();
 
         // Pemberian rating (donatur)
-        if (type == 'rating' || title.contains('rating') || title.contains('ulasan')) {
+        if (type == 'rating' ||
+            title.contains('rating') ||
+            title.contains('ulasan')) {
           activityCount++;
           earnedPoints += 15; // +15 poin per rating
         }
@@ -160,10 +208,12 @@ class _HomeScreenState extends State<HomeScreen>
       // (misal poin dari donasi uang via backend)
       final backendPoints = profile.communityPoints;
       // Gabungkan: gunakan nilai terbesar antara kalkulasi frontend vs backend
-      final finalPoints = earnedPoints > backendPoints ? earnedPoints : backendPoints;
+      final finalPoints =
+          earnedPoints > backendPoints ? earnedPoints : backendPoints;
 
       return _HomeStats(
-        activityCount: activityCount > 0 ? activityCount : profile.donationCount,
+        activityCount:
+            activityCount > 0 ? activityCount : profile.donationCount,
         earnedPoints: finalPoints,
       );
     } catch (_) {
@@ -192,7 +242,10 @@ class _HomeScreenState extends State<HomeScreen>
       items = items.map((req) {
         if (req.distanceKm <= 0) {
           final dMeters = _haversineMeters(
-            pos.latitude, pos.longitude, req.latitude, req.longitude,
+            pos.latitude,
+            pos.longitude,
+            req.latitude,
+            req.longitude,
           );
           return DonationRequest(
             id: req.id,
@@ -357,7 +410,8 @@ class _HomeScreenState extends State<HomeScreen>
     return FutureBuilder<_HomeStats>(
       future: _statsFuture,
       builder: (context, snapshot) {
-        final stats = snapshot.data ?? const _HomeStats(activityCount: 0, earnedPoints: 0);
+        final stats = snapshot.data ??
+            const _HomeStats(activityCount: 0, earnedPoints: 0);
         return Row(
           children: [
             Expanded(
@@ -433,7 +487,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildUrgentCarousel(BuildContext context) {
     return SizedBox(
-      height: 240,
+      height: 260,
       child: FutureBuilder<List<DonationRequest>>(
         future: _urgentFuture,
         builder: (context, snapshot) {
@@ -467,14 +521,24 @@ class _HomeScreenState extends State<HomeScreen>
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final req = ordered[index];
-              return _UrgentCard(
-                request: req,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => RequestDetailScreen(request: req),
-                  ),
-                ),
+              return FutureBuilder<List<Map<String, dynamic>>>(
+                future: _repo.getDocumentation(req.id),
+                builder: (context, docsSnap) {
+                  final coverUrl = docsSnap.data?.isNotEmpty == true
+                      ? (docsSnap.data!.first['photo_url']?.toString() ?? '')
+                      : null;
+
+                  return _UrgentCard(
+                    request: req,
+                    coverImageUrl: coverUrl,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RequestDetailScreen(request: req),
+                      ),
+                    ),
+                  );
+                },
               );
             },
           );
@@ -600,14 +664,19 @@ class _UrgentCard extends StatelessWidget {
   final DonationRequest request;
   final VoidCallback onTap;
   final String? coverImageUrl;
-  const _UrgentCard({required this.request, required this.onTap, this.coverImageUrl});
+
+  const _UrgentCard({
+    required this.request,
+    required this.onTap,
+    this.coverImageUrl,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 220,
+        width: 230,
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
@@ -624,7 +693,8 @@ class _UrgentCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
                 children: [
                   Container(
@@ -704,9 +774,12 @@ class _UrgentCard extends StatelessWidget {
                     collected: request.collectedAmount,
                     goal: request.goalAmount,
                     collectedLabel:
-                        'Terkumpul: ${request.goalUnit == 'Kg' ? '${_fmt(request.collectedAmount)} Kg' : 'Rp ${_fmt(request.collectedAmount)}'}',
-                    goalLabel:
-                        'Target: ${request.goalUnit == 'Kg' ? '${_fmt(request.goalAmount)} Kg' : 'Rp ${_fmt(request.goalAmount)}'}',
+                        _inferUnitFromCategory(request.category) == 'Kg'
+                            ? '${_fmt(request.collectedAmount)} Kg'
+                            : 'Rp ${_fmt(request.collectedAmount)}',
+                    goalLabel: _inferUnitFromCategory(request.category) == 'Kg'
+                        ? 'Target: ${_fmt(request.goalAmount)} Kg'
+                        : 'Target: Rp ${_fmt(request.goalAmount)}',
                   ),
                 ],
               ),
@@ -718,9 +791,12 @@ class _UrgentCard extends StatelessWidget {
   }
 
   Widget _buildImageWidget() {
+    // Samakan sumber thumbnail dengan RequestDetail docs:
+    // docs[i]['photo_url'] -> coverImageUrl
     final imageToShow =
-        coverImageUrl?.isNotEmpty == true ? coverImageUrl! : request.imageUrl;
-    if (imageToShow != null && imageToShow.isNotEmpty) {
+        coverImageUrl?.isNotEmpty == true ? coverImageUrl! : null;
+
+    if (imageToShow != null) {
       return Image.network(
         imageToShow,
         fit: BoxFit.cover,
@@ -733,25 +809,80 @@ class _UrgentCard extends StatelessWidget {
                   ? loadingProgress.cumulativeBytesLoaded /
                       loadingProgress.expectedTotalBytes!
                   : null,
+              color: AppColors.primary,
+              strokeWidth: 2,
             ),
           );
         },
       );
     }
+
     return _placeholderImage();
   }
 
   Widget _placeholderImage() {
+    // Use category-based icon instead of heart/hand
+    final icon = _categoryIcon(request.category);
     return Container(
       color: AppColors.primaryContainer,
-      child: const Center(
-        child: Icon(
-          Icons.volunteer_activism_rounded,
-          color: AppColors.primary,
-          size: 36,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: AppColors.primary, size: 32),
+            const SizedBox(height: 4),
+            Text(
+              request.category,
+              style: const TextStyle(
+                fontSize: 10,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  IconData _categoryIcon(String category) {
+    final cat = category.toLowerCase();
+    if (cat.contains('food') ||
+        cat.contains('water') ||
+        cat.contains('makanan')) {
+      return Icons.restaurant_rounded;
+    } else if (cat.contains('health') ||
+        cat.contains('medis') ||
+        cat.contains('kesehatan')) {
+      return Icons.local_hospital_rounded;
+    } else if (cat.contains('cloth') || cat.contains('pakaian')) {
+      return Icons.checkroom_rounded;
+    } else if (cat.contains('education') || cat.contains('pendidikan')) {
+      return Icons.school_rounded;
+    } else if (cat.contains('shelter') || cat.contains('rumah')) {
+      return Icons.home_rounded;
+    } else {
+      return Icons.inventory_2_rounded;
+    }
+  }
+
+  String _inferUnitFromCategory(String category) {
+    // Heuristik berbasis kategori UI (backend tidak menyimpan unit kg/rp).
+    // Gunakan kategori yang ada untuk memperkirakan unit.
+    final c = category.toLowerCase().trim();
+    // Makanan/air, medis seringnya lebih masuk akal pakai Kg.
+    if (c.contains('pangan') ||
+        c.contains('medis') ||
+        c.contains('pakaian') == false &&
+            (c.contains('makanan') ||
+                c.contains('water') ||
+                c.contains('food'))) {
+      return 'Kg';
+    }
+    // Selebihnya default Rp.
+    return 'Rp';
   }
 
   String _fmt(double v) {
@@ -816,8 +947,7 @@ class _ArticleCard extends StatelessWidget {
                     color: AppColors.primaryContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child:
-                      Icon(article.icon, color: AppColors.primary, size: 16),
+                  child: Icon(article.icon, color: AppColors.primary, size: 16),
                 ),
                 const SizedBox(width: 6),
                 Container(

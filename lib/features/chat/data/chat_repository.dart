@@ -169,15 +169,44 @@ class ChatRepository {
         .toList();
   }
 
-  Future<void> sendMessage({
+  Future<ChatMessageDto> sendMessage({
     required int conversationId,
     required String body,
+    required String senderId,
   }) async {
-    await ApiClient.post<Map<String, dynamic>>(
+    final res = await ApiClient.post<Map<String, dynamic>>(
       '/api/chats/$conversationId/messages',
       data: {
         'body': body,
       },
+    );
+
+    // Coba parse pesan yang dikembalikan API
+    final resData = res.data ?? {};
+    final raw = resData['data'] ?? resData['message'] ?? resData;
+    if (raw is Map<String, dynamic> && raw.containsKey('id')) {
+      return ChatMessageDto(
+        id: (raw['id'] as num).toInt(),
+        conversationId: conversationId,
+        senderId: raw['sender_id']?.toString() ?? senderId,
+        body: raw['body']?.toString() ?? body,
+        createdAt: (() {
+          final parsed = DateTime.tryParse(raw['created_at']?.toString() ?? '');
+          if (parsed == null) return DateTime.now();
+          return parsed.isUtc ? parsed.toLocal() : parsed;
+        })(),
+      );
+    }
+
+    // Fallback: kembalikan pesan dengan DateTime.now() jika API tidak return data
+    return ChatMessageDto(
+      id: resData['id'] != null
+          ? (resData['id'] as num).toInt()
+          : DateTime.now().millisecondsSinceEpoch,
+      conversationId: conversationId,
+      senderId: senderId,
+      body: body,
+      createdAt: DateTime.now(),
     );
   }
 
