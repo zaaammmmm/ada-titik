@@ -1,9 +1,12 @@
-// lib/features/auth/register_screen.dart
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:flutter/gestures.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/network/api_client.dart';
 import '../../shared/models/models.dart';
-import '../../shared/widgets/main_scaffold.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -13,14 +16,106 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  final _formKey = GlobalKey<FormState>();
+
+  final _nameCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
+
   UserType _selectedType = UserType.individu;
   bool _agreedToTerms = false;
+  bool _isLoading = false;
 
-  void _register() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainScaffold()),
-      (_) => false,
-    );
+  String? _inlineError;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
+    super.dispose();
+  }
+
+  String _roleForBackend() {
+    switch (_selectedType) {
+      case UserType.individu:
+        return 'donatur';
+      case UserType.organisasi:
+        return 'komunitas';
+    }
+  }
+
+  // ✅ FIXED: regex email yang benar (single backslash di Dart raw string)
+  // Sebelumnya: r'^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$' — double-escape, tidak valid
+  String? _validateEmail(String? v) {
+    final value = (v ?? '').trim();
+    if (value.isEmpty) return 'Email wajib diisi.';
+    final emailRegex = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    if (!emailRegex.hasMatch(value)) return 'Format email tidak valid.';
+    return null;
+  }
+
+  // ✅ FIXED: minimal 8 karakter (sesuai validasi backend), bukan 6
+  String? _validatePassword(String? v) {
+    final value = (v ?? '');
+    if (value.isEmpty) return 'Password wajib diisi.';
+    if (value.length < 8) return 'Password minimal 8 karakter.';
+    return null;
+  }
+
+  Future<void> _register() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!_agreedToTerms) {
+      setState(() => _inlineError = 'Silakan setujui syarat & ketentuan.');
+      return;
+    }
+
+    setState(() {
+      _inlineError = null;
+      _isLoading = true;
+    });
+
+    try {
+      final name = _nameCtrl.text.trim();
+      final email = _emailCtrl.text.trim();
+      final password = _passwordCtrl.text;
+
+      final res = await ApiClient.post<Map<String, dynamic>>(
+        '/api/auth/register',
+        data: {
+          'name': name,
+          'email': email,
+          'password': password,
+          'role': _roleForBackend(),
+        },
+      );
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        if (!mounted) return;
+        context.go('/login');
+        return;
+      }
+
+      final msg = (res.data?['message'] ?? res.data?['error'])?.toString();
+      setState(
+          () => _inlineError = msg ?? 'Register gagal (${res.statusCode}).');
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      final serverMsg = (e.response?.data is Map)
+          ? ((e.response?.data as Map)['message'] ??
+                  (e.response?.data as Map)['error'])
+              ?.toString()
+          : null;
+      setState(() => _inlineError =
+          serverMsg ?? 'Register gagal${status != null ? ' ($status)' : ''}.');
+    } catch (_) {
+      setState(
+          () => _inlineError = 'Register gagal. Periksa koneksi/URL backend.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -36,141 +131,184 @@ class _RegisterScreenState extends State<RegisterScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 8),
-                Text('Create Account', style: AppTextStyles.headlineLarge),
-                const SizedBox(height: 6),
-                Text(
-                  'Join the Ada Titik? community to start\nmaking an impact.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 8),
+                  Text('Create Account', style: AppTextStyles.headlineLarge),
+                  const SizedBox(height: 6),
+                  Text(
+                    'bergabung dengan Ada Titik untuk memberikan dampak yang nyata.',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                // User Type Selection
-                Text('Daftar Sebagai', style: AppTextStyles.titleSmall),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _typeCard(
-                        UserType.individu,
-                        Icons.person_rounded,
-                        'Individu',
-                        'Relawan / Donatur',
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _typeCard(
-                        UserType.organisasi,
-                        Icons.business_rounded,
-                        'Organisasi',
-                        'Lembaga / Komunitas',
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                _formField(
-                  'Nama Lengkap',
-                  Icons.person_outline_rounded,
-                  'Trikarta',
-                ),
-                const SizedBox(height: 14),
-                _formField(
-                  'Email',
-                  Icons.email_outlined,
-                  'a@example.com',
-                  type: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 14),
-                _formField(
-                  'Password',
-                  Icons.lock_outline_rounded,
-                  '••••••••',
-                  obscure: true,
-                ),
-                const SizedBox(height: 14),
-                _formField(
-                  'Konfirmasi Password',
-                  Icons.lock_outline_rounded,
-                  '••••••••',
-                  obscure: true,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Gunakan kombinasi huruf dan angka.',
-                  style: AppTextStyles.bodySmall,
-                ),
-                const SizedBox(height: 16),
-                // Terms
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Checkbox(
-                      value: _agreedToTerms,
-                      onChanged: (v) =>
-                          setState(() => _agreedToTerms = v ?? false),
-                      activeColor: AppColors.primary,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: RichText(
-                        text: TextSpan(
-                          style: AppTextStyles.bodySmall,
-                          children: [
-                            const TextSpan(text: 'Saya menyetujui '),
-                            TextSpan(
-                              text: 'Syarat & Ketentuan',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            const TextSpan(text: ' serta '),
-                            TextSpan(
-                              text: 'Kebijakan Privasi',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            const TextSpan(text: ' yang berlaku.'),
-                          ],
+                  const SizedBox(height: 24),
+                  Text('Daftar Sebagai', style: AppTextStyles.titleSmall),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _typeCard(
+                          UserType.individu,
+                          Icons.person_rounded,
+                          'Individu',
+                          'Relawan / Donatur',
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: _agreedToTerms ? _register : null,
-                  child: const Text('Daftar Sekarang'),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _typeCard(
+                          UserType.organisasi,
+                          Icons.business_rounded,
+                          'Organisasi',
+                          'Lembaga / Komunitas',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _formField(
+                    label: 'Nama Lengkap',
+                    icon: Icons.person_outline_rounded,
+                    controller: _nameCtrl,
+                    validator: (v) {
+                      if ((v ?? '').trim().isEmpty) return 'Nama wajib diisi.';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _formField(
+                    label: 'Email',
+                    icon: Icons.email_outlined,
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    validator: _validateEmail,
+                  ),
+                  const SizedBox(height: 14),
+                  _formField(
+                    label: 'Password',
+                    icon: Icons.lock_outline_rounded,
+                    controller: _passwordCtrl,
+                    obscure: true,
+                    validator: _validatePassword,
+                  ),
+                  const SizedBox(height: 14),
+                  _formField(
+                    label: 'Konfirmasi Password',
+                    icon: Icons.lock_outline_rounded,
+                    controller: _confirmPasswordCtrl,
+                    obscure: true,
+                    validator: (v) {
+                      final value = (v ?? '');
+                      if (value.isEmpty)
+                        return 'Konfirmasi password wajib diisi.';
+                      if (value != _passwordCtrl.text) {
+                        return 'Konfirmasi password tidak sesuai.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Gunakan minimal 8 karakter kombinasi huruf dan angka.',
+                    style: AppTextStyles.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Checkbox(
+                        value: _agreedToTerms,
+                        onChanged: (v) =>
+                            setState(() => _agreedToTerms = v ?? false),
+                        activeColor: AppColors.primary,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: RichText(
+                          text: TextSpan(
+                            style: AppTextStyles.bodySmall,
+                            children: [
+                              const TextSpan(text: 'Saya menyetujui '),
+                              TextSpan(
+                                text: 'Syarat & Ketentuan',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.primary,
+                                  decoration: TextDecoration.underline,
+                                ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = () {
+                                    // ignore: use_build_context_synchronously
+                                    context.go('/terms');
+                                  },
+                              ),
+                              const TextSpan(text: ' serta '),
+                              TextSpan(
+                                text: 'Kebijakan Privasi',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.primary,
+                                  decoration: TextDecoration.underline,
+                                ),
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = () {
+                                    // ignore: use_build_context_synchronously
+                                    context.go('/terms');
+                                  },
+                              ),
+                              const TextSpan(text: ' yang berlaku.'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_inlineError != null) ...[
+                    const SizedBox(height: 12),
                     Text(
-                      'Sudah punya akun? ',
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Text(
-                        'Login',
-                        style: AppTextStyles.labelLarge.copyWith(
-                          color: AppColors.primary,
-                        ),
+                      _inlineError!,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed:
+                          (_agreedToTerms && !_isLoading) ? _register : null,
+                      child: Text(
+                          _isLoading ? 'Mendaftarkan...' : 'Daftar Sekarang'),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Sudah punya akun? ',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => context.go('/login'),
+                        child: Text(
+                          'Login',
+                          style: AppTextStyles.labelLarge.copyWith(
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -204,9 +342,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               children: [
                 CircleAvatar(
                   radius: 22,
-                  backgroundColor: isSelected
-                      ? AppColors.primary
-                      : AppColors.surfaceVariant,
+                  backgroundColor:
+                      isSelected ? AppColors.primary : AppColors.surfaceVariant,
                   child: Icon(
                     icon,
                     color: isSelected ? Colors.white : AppColors.textSecondary,
@@ -246,12 +383,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _formField(
-    String label,
-    IconData icon,
-    String hint, {
-    TextInputType type = TextInputType.text,
+  Widget _formField({
+    required String label,
+    required IconData icon,
+    required TextEditingController controller,
     bool obscure = false,
+    TextInputType keyboardType = TextInputType.text,
+    String? Function(String?)? validator,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -259,11 +397,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         Text(label, style: AppTextStyles.titleSmall),
         const SizedBox(height: 6),
         TextFormField(
-          keyboardType: type,
+          controller: controller,
+          keyboardType: keyboardType,
           obscureText: obscure,
+          validator: validator,
           decoration: InputDecoration(
-            hintText: hint,
             prefixIcon: Icon(icon, color: AppColors.textLight, size: 18),
+            filled: true,
+            fillColor: Colors.white,
           ),
         ),
       ],

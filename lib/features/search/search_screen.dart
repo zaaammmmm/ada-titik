@@ -1,8 +1,9 @@
 // lib/features/search/search_screen.dart
 import 'package:flutter/material.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import '../donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
 import '../donation/request_detail_screen.dart';
 
@@ -15,6 +16,7 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _searchController = TextEditingController();
+
   String _query = '';
   String _selectedCategory = 'Semua';
   String _selectedUrgency = 'Semua';
@@ -39,38 +41,36 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
-  List<DonationRequest> get _filteredResults {
-    return MockData.activeRequests.where((req) {
-      final matchesQuery =
-          _query.isEmpty ||
-          req.title.toLowerCase().contains(_query.toLowerCase()) ||
-          req.location.toLowerCase().contains(_query.toLowerCase()) ||
-          req.category.toLowerCase().contains(_query.toLowerCase());
+  Future<List<DonationRequest>> _loadResults() async {
+    final repo = DonationRepository();
 
-      final matchesCategory =
-          _selectedCategory == 'Semua' ||
-          req.category.toLowerCase().contains(
-            _selectedCategory.toLowerCase(),
-          );
-
-      return matchesQuery && matchesCategory;
-    }).toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(context),
-      body: Column(
-        children: [
-          _buildFilters(),
-          Expanded(
-            child: _buildResults(),
-          ),
-        ],
-      ),
+    final results = await repo.getAll(
+      urgency: _selectedUrgency != 'Semua'
+          ? _selectedUrgency == 'Mendesak'
+              ? UrgencyLevel.urgent
+              : _selectedUrgency == 'Normal'
+                  ? UrgencyLevel.normal
+                  : UrgencyLevel.low
+          : null,
+      status: _selectedStatus != 'Semua'
+          ? _selectedStatus == 'Open'
+              ? RequestStatus.open
+              : _selectedStatus == 'On Progress'
+                  ? RequestStatus.onProgress
+                  : RequestStatus.completed
+          : null,
+      category: _selectedCategory != 'Semua' ? _selectedCategory : null,
+      search: _query.trim().isEmpty ? null : _query.trim(),
+      page: 1,
+      limit: 50,
     );
+
+    final filtered = results.where((req) {
+      if (_selectedCategory == 'Semua') return true;
+      return req.category.toLowerCase() == _selectedCategory.toLowerCase();
+    }).toList();
+
+    return filtered;
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
@@ -162,12 +162,10 @@ class _SearchScreenState extends State<SearchScreen> {
                     child: Text(
                       cat,
                       style: AppTextStyles.labelMedium.copyWith(
-                        color: isSelected
-                            ? Colors.white
-                            : AppColors.textSecondary,
-                        fontWeight: isSelected
-                            ? FontWeight.w700
-                            : FontWeight.w500,
+                        color:
+                            isSelected ? Colors.white : AppColors.textSecondary,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
                       ),
                     ),
                   ),
@@ -193,11 +191,19 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                _buildDropdownChip('Urgensi', _urgencies, _selectedUrgency,
-                    (v) => setState(() => _selectedUrgency = v!)),
+                _buildDropdownChip(
+                  'Urgensi',
+                  _urgencies,
+                  _selectedUrgency,
+                  (v) => setState(() => _selectedUrgency = v!),
+                ),
                 const SizedBox(width: 8),
-                _buildDropdownChip('Status', _statuses, _selectedStatus,
-                    (v) => setState(() => _selectedStatus = v!)),
+                _buildDropdownChip(
+                  'Status',
+                  _statuses,
+                  _selectedStatus,
+                  (v) => setState(() => _selectedStatus = v!),
+                ),
               ],
             ),
           ),
@@ -247,40 +253,59 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildResults() {
-    final results = _filteredResults;
-
-    if (results.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off_rounded,
-              size: 64,
-              color: AppColors.textLight,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Tidak ada hasil ditemukan',
-              style: AppTextStyles.titleMedium.copyWith(
+    return FutureBuilder<List<DonationRequest>>(
+      future: _loadResults(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Failed to load results',
+              style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Coba kata kunci atau filter yang berbeda',
-              style: AppTextStyles.bodySmall,
-            ),
-          ],
-        ),
-      );
-    }
+          );
+        }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: results.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, i) => _buildResultCard(context, results[i]),
+        final results = snapshot.data ?? [];
+
+        if (results.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.search_off_rounded,
+                  size: 64,
+                  color: AppColors.textLight,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Tidak ada hasil ditemukan',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Coba kata kunci atau filter yang berbeda',
+                  style: AppTextStyles.bodySmall,
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: results.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, i) => _buildResultCard(context, results[i]),
+        );
+      },
     );
   }
 
@@ -410,6 +435,22 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: _buildAppBar(context),
+      body: Column(
+        children: [
+          _buildFilters(),
+          Expanded(
+            child: _buildResults(),
+          ),
+        ],
       ),
     );
   }

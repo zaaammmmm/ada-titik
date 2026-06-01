@@ -1,94 +1,228 @@
-// lib/features/profile/profile_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../shared/models/mock_data.dart';
+import '../../core/network/auth_storage.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../features/donation/data/donation_repository.dart';
 import '../../shared/models/models.dart';
-import '../donation/donation_history_screen.dart';
+import '../../shared/widgets/app_widgets.dart';
 
-class ProfileScreen extends StatelessWidget {
+import '../donation/donation_history_screen.dart';
+import 'account_settings_screen.dart';
+import 'user_activity_screen.dart';
+import 'edit_profile_screen.dart';
+
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final user = MockData.currentUser;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: _buildAppBar(context),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildProfileCard(context, user),
-            const SizedBox(height: 12),
-            _buildQuickLinks(context),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Your Impact', style: AppTextStyles.headlineMedium),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repo = DonationRepository();
+
+    return FutureBuilder<UserModel>(
+      future: repo.getProfile(),
+      builder: (context, snapshot) {
+        final state = snapshot.connectionState;
+
+        if (state == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.background,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Scaffold(
+            backgroundColor: AppColors.background,
+            appBar: AdaTitikAppBar(
+              title: 'Profil',
+              onNotification: () => context.push('/home/notification'),
             ),
-            const SizedBox(height: 12),
-            _buildImpactCards(user),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Recent Activity', style: AppTextStyles.headlineMedium),
-                  TextButton(
-                    onPressed: () {},
-                    child: Text(
-                      'View All',
-                      style: AppTextStyles.labelMedium.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Failed to load profile',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
                   ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            _buildRecentActivity(),
-            const SizedBox(height: 24),
-          ],
-        ),
-      ),
-    );
-  }
+          );
+        }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
-    return AppBar(
-      backgroundColor: AppColors.surface,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      leading: Padding(
-        padding: const EdgeInsets.all(8),
-        child: CircleAvatar(
-          radius: 18,
-          backgroundImage: const NetworkImage(
-            'https://i.pravatar.cc/150?img=12',
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          appBar: AdaTitikAppBar(
+            title: 'Profil',
+            onNotification: () => context.push('/home/notification'),
           ),
-          backgroundColor: AppColors.primaryContainer,
-        ),
+          body: _ProfileContent(
+            user: snapshot.data!,
+            onLogout: () async {
+              await AuthStorage.clear();
+              ref.invalidate(authProvider);
+              if (!context.mounted) return;
+              context.go('/login');
+            },
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ProfileContent extends StatefulWidget {
+  final UserModel user;
+  final Future<void> Function() onLogout;
+
+  const _ProfileContent({
+    required this.user,
+    required this.onLogout,
+  });
+
+  @override
+  State<_ProfileContent> createState() => _ProfileContentState();
+}
+
+class _ProfileContentState extends State<_ProfileContent> {
+  UserModel get user => widget.user;
+  Future<void> Function() get onLogout => widget.onLogout;
+
+  late Future<_ProfileStats> _statsFuture;
+  final DonationRepository _repo = const DonationRepository();
+
+  @override
+  void initState() {
+    super.initState();
+    _statsFuture = _loadStats();
+  }
+
+  Future<_ProfileStats> _loadStats() async {
+    try {
+      final isKomunitas = user.role.toLowerCase() == 'komunitas';
+      final activities = await _repo.getUserActivity(limit: 100);
+
+      int activityCount = 0;
+      int earnedPoints = 0;
+
+      for (final a in activities) {
+        final type = a.iconType.toLowerCase();
+        final title = a.title.toLowerCase();
+
+        if (type == 'rating' ||
+            title.contains('rating') ||
+            title.contains('ulasan')) {
+          activityCount++;
+          earnedPoints += 15;
+        } else if (type == 'participant_accepted' ||
+            type == 'donation' ||
+            title.contains('diterima') ||
+            title.contains('accept') ||
+            title.contains('berangkat')) {
+          activityCount++;
+          earnedPoints += 50;
+        } else if (type == 'success' ||
+            title.contains('selesai') ||
+            title.contains('complete') ||
+            title.contains('berhasil')) {
+          activityCount++;
+          earnedPoints += 100;
+        } else if (isKomunitas &&
+            (type == 'donation_managed' ||
+                title.contains('titik') ||
+                title.contains('membuat') ||
+                title.contains('buat'))) {
+          activityCount++;
+          earnedPoints += 30;
+        } else if (isKomunitas &&
+            (type == 'community_post' ||
+                title.contains('postingan') ||
+                title.contains('posting') ||
+                title.contains('feed'))) {
+          activityCount++;
+          earnedPoints += 10;
+        } else if (isKomunitas &&
+            (title.contains('menyelesaikan') ||
+                title.contains('verifikasi') ||
+                title.contains('konfirmasi'))) {
+          activityCount++;
+          earnedPoints += 25;
+        }
+      }
+
+      final backendPoints = user.communityPoints;
+      final finalPoints =
+          earnedPoints > backendPoints ? earnedPoints : backendPoints;
+
+      return _ProfileStats(
+        activityCount: activityCount > 0 ? activityCount : user.donationCount,
+        earnedPoints: finalPoints,
+      );
+    } catch (_) {
+      return _ProfileStats(
+        activityCount: user.donationCount,
+        earnedPoints: user.communityPoints,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildProfileCard(context),
+          const SizedBox(height: 12),
+          _buildQuickLinks(context),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('Your Impact', style: AppTextStyles.headlineMedium),
+          ),
+          const SizedBox(height: 12),
+          _buildImpactCards(),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Recent Activity', style: AppTextStyles.headlineMedium),
+                TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const DonationHistoryScreen(),
+                    ),
+                  ),
+                  child: Text(
+                    'View All',
+                    style: AppTextStyles.labelMedium.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          _buildRecentActivity(),
+          const SizedBox(height: 24),
+          _buildLogoutButton(context),
+          const SizedBox(height: 24),
+        ],
       ),
-      title: Text(
-        'Ada Titik?',
-        style: AppTextStyles.brandTitle.copyWith(fontSize: 22),
-      ),
-      centerTitle: true,
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.notifications_outlined),
-          color: AppColors.textPrimary,
-          onPressed: () {},
-        ),
-      ],
     );
   }
 
-  Widget _buildProfileCard(BuildContext context, UserModel user) {
+  Widget _buildProfileCard(BuildContext context) {
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -108,12 +242,10 @@ class ProfileScreen extends StatelessWidget {
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              CircleAvatar(
-                radius: 44,
-                backgroundImage: NetworkImage(
-                  user.avatarUrl ?? 'https://i.pravatar.cc/150?img=12',
-                ),
-                backgroundColor: AppColors.primaryContainer,
+              UserAvatar(
+                avatarUrl: user.avatarUrl,
+                name: user.name,
+                size: 88,
               ),
               Container(
                 width: 22,
@@ -140,7 +272,7 @@ class ProfileScreen extends StatelessWidget {
               Icon(Icons.verified, color: AppColors.primary, size: 16),
               const SizedBox(width: 4),
               Text(
-                'Verified Member',
+                '${user.isVerified ? 'Verified ' : ''}${user.role.toLowerCase() == 'komunitas' ? 'Komunitas' : 'Donatur'}',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.primary,
                   fontWeight: FontWeight.w600,
@@ -158,7 +290,22 @@ class ProfileScreen extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () {},
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditProfileScreen(user: user),
+                  ),
+                );
+
+                if (result == true && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Profil berhasil diperbarui'),
+                    ),
+                  );
+                }
+              },
               icon: const Icon(Icons.edit_outlined, size: 16),
               label: const Text('Edit Profile'),
               style: ElevatedButton.styleFrom(
@@ -185,18 +332,38 @@ class ProfileScreen extends StatelessWidget {
         label: 'Riwayat Donasi',
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const DonationHistoryScreen()),
+          MaterialPageRoute(
+            builder: (_) => const DonationHistoryScreen(),
+          ),
         ),
       ),
       _QuickLink(
         icon: Icons.favorite_outline_rounded,
-        label: 'Daftar Keinginan',
-        onTap: () {},
+        label: 'Aktivitas Anda',
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const UserActivityScreen(),
+          ),
+        ),
       ),
       _QuickLink(
         icon: Icons.manage_accounts_outlined,
         label: 'Pengaturan Akun',
-        onTap: () {},
+        onTap: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AccountSettingsScreen(user: user),
+            ),
+          );
+          if (result == true) {
+            // Trigger parent ProfileScreen to reload
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Pengaturan akun disimpan')),
+            );
+          }
+        },
       ),
     ];
 
@@ -258,164 +425,220 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildImpactCards(UserModel user) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          _ImpactCard(
-            icon: Icons.account_balance_wallet_outlined,
-            label: 'Total Donasi',
-            value: 'Rp 2.5M',
-            sub: 'Lifetime contribution',
-            iconColor: AppColors.primary,
-            iconBg: AppColors.primaryContainer,
+  Widget _buildImpactCards() {
+    final isKomunitas = user.role.toLowerCase() == 'komunitas';
+
+    return FutureBuilder<_ProfileStats>(
+      future: _statsFuture,
+      builder: (context, snapshot) {
+        final stats = snapshot.data;
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+
+        final activityValue =
+            loading ? '...' : (stats?.activityCount ?? 0).toString();
+        final pointsValue =
+            loading ? '...' : (stats?.earnedPoints ?? 0).toString();
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              _ImpactCard(
+                icon: Icons.local_activity_rounded,
+                label: 'Activity Count',
+                value: activityValue,
+                sub: isKomunitas
+                    ? 'Rating diberikan + titik dibuat + postingan + accept'
+                    : 'Rating diberikan + donasi berhasil + selesai',
+                iconColor: const Color(0xFF00897B),
+                iconBg: const Color(0xFFE0F2F1),
+              ),
+              const SizedBox(height: 12),
+              _ImpactCard(
+                icon: Icons.stars_rounded,
+                label: 'Poin Diperoleh',
+                value: pointsValue,
+                sub: isKomunitas
+                    ? '+30 titik, +25 accept, +10 postingan, +15 rating'
+                    : '+15 rating, +50 berangkat, +100 donasi selesai',
+                iconColor: const Color(0xFF1565C0),
+                iconBg: const Color(0xFFE3F2FD),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _ImpactCard(
-            icon: Icons.local_shipping_outlined,
-            label: 'Bantuan Disalurkan',
-            value: '${user.donationCount}',
-            sub: 'Successful deliveries',
-            iconColor: const Color(0xFF1565C0),
-            iconBg: const Color(0xFFE3F2FD),
-          ),
-          const SizedBox(height: 12),
-          _ImpactCard(
-            icon: Icons.emoji_events_outlined,
-            label: 'Poin Komunitas',
-            value: '${user.communityPoints}',
-            sub: 'Top 15% Contributor',
-            iconColor: AppColors.textSecondary,
-            iconBg: AppColors.surfaceVariant,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildRecentActivity() {
-    final items = [
-      _ActivityEntry(
-        icon: Icons.inventory_2_outlined,
-        iconBg: const Color(0xFFFFF8E1),
-        iconColor: AppColors.urgencyMedium,
-        title: 'Paket Sembako Keluarga Harapan',
-        subtitle: 'Donasi Barang · Menunggu Penjemputan',
-        status: 'On Progress',
-        statusColor: AppColors.statusProgress,
-        statusBg: AppColors.statusProgressLight,
-        date: 'Today, 09:45 AM',
-      ),
-      _ActivityEntry(
-        icon: Icons.check_circle_outline_rounded,
-        iconBg: AppColors.urgencyLowLight,
-        iconColor: AppColors.urgencyLow,
-        title: 'Bantuan Tunai Pendidikan SD Mawar',
-        subtitle: 'Donasi Dana · Rp 500.000',
-        status: 'Completed',
-        statusColor: AppColors.statusCompleted,
-        statusBg: AppColors.statusCompletedLight,
-        date: 'Oct 12, 2023',
-      ),
-      _ActivityEntry(
-        icon: Icons.volunteer_activism_outlined,
-        iconBg: AppColors.primaryContainer,
-        iconColor: AppColors.primary,
-        title: 'Relawan Dapur Umum Banjir Bandang',
-        subtitle: 'Partisipasi Tenaga · 8 Jam',
-        status: 'Completed',
-        statusColor: AppColors.statusCompleted,
-        statusBg: AppColors.statusCompletedLight,
-        date: 'Sep 28, 2023',
-      ),
-    ];
+    final repo = DonationRepository();
+    return FutureBuilder<List<ActivityItem>>(
+      future: repo.getUserActivity(limit: 2),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+        if (snapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Gagal memuat aktivitas. Mohon coba lagi.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
-          ],
-        ),
-        child: Column(
-          children: List.generate(items.length, (i) {
-            final item = items[i];
-            return Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: item.iconBg,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(item.icon, color: item.iconColor, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.title,
-                              style: AppTextStyles.titleSmall,
+          );
+        }
+
+        final activities = snapshot.data ?? [];
+        if (activities.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Belum ada aktivitas terbaru. Silakan ulangi lagi nanti.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: List.generate(activities.length, (i) {
+                final item = activities[i];
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: _activityIconBackground(item.iconType),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              item.subtitle,
-                              style: AppTextStyles.bodySmall,
+                            child: Icon(
+                              _activityIconData(item.iconType),
+                              color: _activityIconColor(item.iconType),
+                              size: 22,
                             ),
-                            const SizedBox(height: 6),
-                            Row(
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: item.statusBg,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    item.status,
-                                    style: AppTextStyles.labelSmall.copyWith(
-                                      color: item.statusColor,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  item.date,
-                                  style: AppTextStyles.bodySmall,
-                                ),
+                                Text(item.title,
+                                    style: AppTextStyles.titleSmall),
+                                const SizedBox(height: 2),
+                                if (item.subtitle.isNotEmpty)
+                                  Text(item.subtitle,
+                                      style: AppTextStyles.bodySmall),
+                                const SizedBox(height: 6),
+                                Text(item.timeAgo,
+                                    style: AppTextStyles.bodySmall),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                if (i < items.length - 1)
-                  const Divider(height: 1, color: AppColors.divider),
-              ],
-            );
-          }),
+                    ),
+                    if (i < activities.length - 1)
+                      const Divider(height: 1, color: AppColors.divider),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _activityIconData(String type) {
+    return switch (type) {
+      'success' => Icons.check_circle_outline_rounded,
+      'donation' => Icons.favorite_outline_rounded,
+      'participant_accepted' => Icons.people_outline_rounded,
+      _ => Icons.campaign_rounded,
+    };
+  }
+
+  Color _activityIconBackground(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompletedLight,
+      'donation' => AppColors.urgencyHighLight,
+      'participant_accepted' => AppColors.primaryContainer,
+      _ => AppColors.urgencyMediumLight,
+    };
+  }
+
+  Color _activityIconColor(String type) {
+    return switch (type) {
+      'success' => AppColors.statusCompleted,
+      'donation' => AppColors.urgencyHigh,
+      'participant_accepted' => AppColors.primary,
+      _ => AppColors.urgencyMedium,
+    };
+  }
+
+  Widget _buildLogoutButton(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: ElevatedButton(
+          onPressed: () => onLogout(),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade700,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+          child: Text(
+            'Logout',
+            style: AppTextStyles.buttonMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ),
     );
@@ -426,6 +649,7 @@ class _QuickLink {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+
   const _QuickLink({
     required this.icon,
     required this.label,
@@ -482,10 +706,7 @@ class _ImpactCard extends StatelessWidget {
                       child: Icon(icon, color: iconColor, size: 18),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: AppTextStyles.captionUppercase,
-                    ),
+                    Text(label, style: AppTextStyles.captionUppercase),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -513,26 +734,9 @@ class _ImpactCard extends StatelessWidget {
   }
 }
 
-class _ActivityEntry {
-  final IconData icon;
-  final Color iconBg;
-  final Color iconColor;
-  final String title;
-  final String subtitle;
-  final String status;
-  final Color statusColor;
-  final Color statusBg;
-  final String date;
-
-  const _ActivityEntry({
-    required this.icon,
-    required this.iconBg,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    required this.statusColor,
-    required this.statusBg,
-    required this.date,
-  });
+class _ProfileStats {
+  final int activityCount;
+  final int earnedPoints;
+  const _ProfileStats(
+      {required this.activityCount, required this.earnedPoints});
 }

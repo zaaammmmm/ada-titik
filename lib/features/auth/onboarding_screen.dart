@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/services/notification_service.dart';
 import 'login_screen.dart';
 
 class _OnboardingPage {
@@ -28,6 +29,7 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
+  bool _notifPermissionRequested = false;
 
   static const List<_OnboardingPage> _pages = [
     _OnboardingPage(
@@ -50,6 +52,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           'Pantau setiap bantuan yang tersalurkan melalui dokumentasi foto dan sistem verifikasi berbasis lokasi.',
       bgColor: Color(0xFFF5F7F6),
       illustrationBg: Color(0xFFDCEEEB),
+    ),
+    // Halaman ke-4: izin notifikasi
+    _OnboardingPage(
+      title: 'Aktifkan\nNotifikasi',
+      description:
+          'Agar tidak ketinggalan update donasi dan pesan penting, aktifkan notifikasi sekarang.',
+      bgColor: Color(0xFFF0F4FF),
+      illustrationBg: Color(0xFFD6E4FF),
     ),
   ];
 
@@ -75,21 +85,113 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  /// Minta izin notifikasi, lalu arahkan ke Setelan sistem jika diperlukan.
+  Future<void> _requestNotificationPermission() async {
+    if (_notifPermissionRequested) {
+      _goToLogin();
+      return;
+    }
+    _notifPermissionRequested = true;
+
+    final status = await NotificationService.instance.requestPermission();
+
+    if (!mounted) return;
+
+    if (status == NotificationPermissionStatus.granted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Notifikasi aktif! Anda akan mendapat update terbaru.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) _goToLogin();
+    } else if (status == NotificationPermissionStatus.deniedForever) {
+      // Izin ditolak permanen — arahkan ke setelan sistem agar user bisa
+      // mengaktifkan notifikasi background secara manual.
+      if (!mounted) return;
+      final shouldOpen = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Buka Setelan Notifikasi'),
+          content: const Text(
+            'Izin notifikasi diblokir. Buka Setelan perangkat untuk mengaktifkan '
+            'notifikasi Ada Titik! termasuk notifikasi background (saat app tidak aktif).',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Lewati'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white),
+              child: const Text('Buka Setelan'),
+            ),
+          ],
+        ),
+      );
+      if (shouldOpen == true) {
+        // Buka halaman setelan notifikasi sistem perangkat
+        await NotificationService.instance.openSystemNotificationSettings();
+      }
+      if (mounted) _goToLogin();
+    } else {
+      // Denied (bukan permanen) — tampilkan dialog penjelasan dengan opsi
+      // langsung ke setelan agar user bisa aktifkan notifikasi background.
+      if (!mounted) return;
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Notifikasi Dinonaktifkan'),
+          content: const Text(
+            'Tanpa notifikasi, Anda mungkin ketinggalan update donasi dan pesan penting.\n\n'
+            'Anda bisa mengaktifkan notifikasi kapan saja di Setelan perangkat → '
+            'Ada Titik! → Notifikasi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'skip'),
+              child: const Text('Lewati'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'settings'),
+              child: Text(
+                'Buka Setelan',
+                style: TextStyle(color: AppColors.primary),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (action == 'settings') {
+        await NotificationService.instance.openSystemNotificationSettings();
+      }
+      if (mounted) _goToLogin();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final isNotifPage = _currentPage == _pages.length - 1;
+
     return Scaffold(
       backgroundColor: _pages[_currentPage].bgColor,
       body: Stack(
         children: [
-          // Page View
           PageView.builder(
             controller: _pageController,
             itemCount: _pages.length,
             onPageChanged: (i) => setState(() => _currentPage = i),
             itemBuilder: (context, index) => _buildPage(context, index, size),
           ),
-          // Skip
           Positioned(
             top: 56,
             right: 20,
@@ -103,8 +205,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
           ),
-          // Bottom controls
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomSheet()),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildBottomSheet(isNotifPage: isNotifPage),
+          ),
         ],
       ),
     );
@@ -115,7 +221,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Column(
       children: [
         const SizedBox(height: 80),
-        // Illustration Area
         Expanded(
           flex: 5,
           child: Padding(
@@ -123,7 +228,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             child: _buildIllustration(index, page),
           ),
         ),
-        // Content bottom space for sheet
         const Expanded(flex: 4, child: SizedBox()),
       ],
     );
@@ -142,7 +246,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Stack(
             alignment: Alignment.center,
             children: [
-              // Simulated map city
               Container(
                 width: 240,
                 height: 180,
@@ -152,7 +255,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
                 child: Stack(
                   children: [
-                    // Buildings placeholder
                     ...List.generate(
                       5,
                       (i) => Positioned(
@@ -162,13 +264,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           width: 28,
                           height: 50.0 + (i % 3) * 20,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.3 + i * 0.05),
+                            color:
+                                Colors.white.withOpacity(0.3 + i * 0.05),
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
                       ),
                     ),
-                    // Markers
                     Positioned(
                       top: 30,
                       right: 40,
@@ -199,14 +301,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ],
                 ),
               ),
-              // App branding text
               Positioned(
                 bottom: 50,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppColors.primary,
                     borderRadius: BorderRadius.circular(8),
@@ -214,7 +313,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   child: Column(
                     children: [
                       Text(
-                        'ADA TITIK?',
+                        'ADA TITIK',
                         style: AppTextStyles.titleSmall.copyWith(
                           color: Colors.white,
                           fontSize: 12,
@@ -259,7 +358,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   _Person3D(color: AppColors.accent),
                   const SizedBox(width: 8),
-                  Icon(Icons.favorite_rounded, color: Colors.pink, size: 28),
+                  const Icon(Icons.favorite_rounded,
+                      color: Colors.pink, size: 28),
                   const SizedBox(width: 8),
                   _Person3D(color: const Color(0xFFF57C00)),
                 ],
@@ -267,7 +367,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               const SizedBox(height: 12),
               Text(
                 'VOLUNTEER. DONATE. SUPPORT.',
-                style: AppTextStyles.captionUppercase.copyWith(fontSize: 9),
+                style:
+                    AppTextStyles.captionUppercase.copyWith(fontSize: 9),
               ),
               const SizedBox(height: 6),
               Row(
@@ -277,9 +378,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   (i) => Container(
                     width: 6,
                     height: 6,
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 3),
                     decoration: BoxDecoration(
-                      color: i == 0 ? AppColors.primary : AppColors.divider,
+                      color: i == 0
+                          ? AppColors.primary
+                          : AppColors.divider,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -289,7 +393,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
         ),
       );
-    } else {
+    } else if (index == 2) {
       return Container(
         decoration: BoxDecoration(
           color: page.illustrationBg,
@@ -314,16 +418,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        width: 100,
-                        height: 8,
-                        color: AppColors.accentLight,
-                      ),
+                          width: 100, height: 8, color: AppColors.accentLight),
                       const SizedBox(height: 6),
                       Container(
-                        width: 60,
-                        height: 8,
-                        color: AppColors.accentLight.withOpacity(0.5),
-                      ),
+                          width: 60,
+                          height: 8,
+                          color:
+                              AppColors.accentLight.withOpacity(0.5)),
                     ],
                   ),
                 ],
@@ -339,9 +440,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
+                    horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: AppColors.primary,
                   borderRadius: BorderRadius.circular(8),
@@ -349,16 +448,102 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.verified_rounded,
-                      color: Colors.white,
-                      size: 16,
-                    ),
+                    const Icon(Icons.verified_rounded,
+                        color: Colors.white, size: 16),
                     const SizedBox(width: 6),
                     Text(
                       'VERIFIED',
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: Colors.white,
+                      style: AppTextStyles.labelSmall
+                          .copyWith(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // Halaman notifikasi (index == 3)
+      return Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: page.illustrationBg,
+          shape: BoxShape.circle,
+        ),
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.notifications_active_rounded,
+                  color: AppColors.primary,
+                  size: 42,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.07),
+                      blurRadius: 8,
+                    )
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.volunteer_activism_rounded,
+                        color: AppColors.primary, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Titik baru di dekatmu!',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.07),
+                      blurRadius: 8,
+                    )
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.chat_rounded,
+                        color: Colors.teal, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Pesan baru dari komunitas',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -371,7 +556,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  Widget _buildBottomSheet() {
+  Widget _buildBottomSheet({required bool isNotifPage}) {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -390,13 +575,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               color: AppColors.textSecondary,
               height: 1.6,
             ),
-            textAlign: TextAlign.center,
           ),
+          if (isNotifPage) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F0FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      color: AppColors.primary, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Notifikasi dibutuhkan agar Anda tetap mendapat update '
+                      'donasi & pesan bahkan saat app ditutup.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 28),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Dots
               Row(
                 children: List.generate(_pages.length, (i) {
                   final isActive = i == _currentPage;
@@ -412,21 +621,52 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   );
                 }),
               ),
-              // Next button
-              ElevatedButton.icon(
-                onPressed: _nextPage,
-                icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                label: const Text('Lanjut'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(120, 48),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24),
+              if (isNotifPage)
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: _goToLogin,
+                      child: Text(
+                        'Lewati',
+                        style: AppTextStyles.labelMedium.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: _requestNotificationPermission,
+                      icon:
+                          const Icon(Icons.notifications_active_rounded, size: 18),
+                      label: const Text('Aktifkan'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(130, 48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        textStyle: AppTextStyles.buttonMedium,
+                      ),
+                    ),
+                  ],
+                )
+              else
+                ElevatedButton.icon(
+                  onPressed: _nextPage,
+                  icon:
+                      const Icon(Icons.chevron_right_rounded, size: 20),
+                  label: const Text('Lanjut'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(120, 48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    textStyle: AppTextStyles.buttonMedium,
                   ),
-                  textStyle: AppTextStyles.buttonMedium,
                 ),
-              ),
             ],
           ),
         ],
@@ -439,11 +679,7 @@ class _MapMarker extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String label;
-  const _MapMarker({
-    required this.icon,
-    required this.color,
-    required this.label,
-  });
+  const _MapMarker({required this.icon, required this.color, required this.label});
 
   @override
   Widget build(BuildContext context) {

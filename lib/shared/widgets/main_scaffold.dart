@@ -1,28 +1,163 @@
 // lib/shared/widgets/main_scaffold.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/services/supabase_realtime_service.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/community/community_screen.dart';
-import '../../features/maps/maps_screen.dart';
+import '../../features/chat/conversations_list_screen.dart';
+import '../../features/chat/data/chat_repository.dart';
+import '../../features/community/data/community_repository.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/donation/add_titik_screen.dart';
+import '../../features/donation/data/donation_repository.dart';
+import '../../features/notification/data/notification_repository.dart';
+import '../../core/services/notification_service.dart';
+import '../../features/donation/request_detail_screen.dart';
+import '../../features/maps/maps_screen.dart';
+import '../../shared/models/models.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class MainScaffold extends StatefulWidget {
+class MainScaffold extends ConsumerStatefulWidget {
   final int initialIndex;
   const MainScaffold({super.key, this.initialIndex = 0});
 
   @override
-  State<MainScaffold> createState() => _MainScaffoldState();
+  ConsumerState<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold> {
+class _MainScaffoldState extends ConsumerState<MainScaffold> {
   late int _currentIndex;
+
+  bool _hasUnreadChat = false;
+  bool _hasUnreadCommunity = false;
+  int _unreadChatCount = 0;
+
+  // Realtime instances
+  final SupabaseRealtimeService _realtimeConv = SupabaseRealtimeService();
+  final SupabaseRealtimeService _realtimeNotif = SupabaseRealtimeService();
+  final SupabaseRealtimeService _realtimeChatNotif = SupabaseRealtimeService();
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    _refreshUnreadIndicators();
+
+    // Subscribe realtime conversations — update badge segera saat ada perubahan
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final userId = ref.read(authProvider).user?.id;
+      if (userId == null || userId.isEmpty) return;
+
+      await _realtimeConv.subscribeToChatConversations(
+        currentUserId: userId,
+        onUpsert: (_) {
+          // Refresh unread count secara realtime setiap ada perubahan conversation
+          if (mounted) _refreshChatUnread();
+        },
+      );
+
+      // Subscribe realtime notifications — agar badge langsung update tanpa refresh manual
+      await _realtimeNotif.subscribeToNotifications(
+        currentUserId: userId,
+        onInsert: (payload) {
+          if (mounted) _refreshNotificationUnread();
+        },
+      );
+
+      // Subscribe to ALL incoming chat messages for local push notifications (background)
+      await _realtimeChatNotif.subscribeToAllChatMessages(
+        currentUserId: userId,
+        onNewMessage: (payload) async {
+          final body = payload['body']?.toString() ?? 'Pesan baru';
+          final convId = payload['conversation_id']?.toString() ?? '';
+          await NotificationService.instance.showChatMessage(
+            conversationId: convId,
+            senderName: 'Pesan Baru',
+            message: body,
+          );
+          // Also refresh chat badge
+          if (mounted) _refreshChatUnread();
+        },
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  int _unreadNotifCount = 0;
+
+  Future<void> _refreshNotificationUnread() async {
+    try {
+      final notifRepo = const NotificationRepository();
+      final notifs = await notifRepo.getUserNotifications(page: 1, limit: 50, unread: true);
+      if (!mounted) return;
+      setState(() => _unreadNotifCount = notifs.length);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshChatUnread() async {
+    try {
+      final chatRepo = const ChatRepository();
+      final convs = await chatRepo.listConversations(page: 1, limit: 50);
+      if (!mounted) return;
+      final hasUnreadChat = convs.any((c) => c.unread);
+      final unreadCount = convs.where((c) => c.unread).length;
+      setState(() {
+        _hasUnreadChat = hasUnreadChat;
+        _unreadChatCount = unreadCount;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _refreshUnreadIndicators() async {
+    try {
+      final chatRepo = const ChatRepository();
+      final communityRepo = const CommunityRepository();
+
+      final convs = await chatRepo.listConversations(page: 1, limit: 50);
+      if (!mounted) return;
+      final hasUnreadChat = convs.any((c) => c.unread);
+      final unreadCount = convs.where((c) => c.unread).length;
+
+      final posts =
+          await communityRepo.getPosts(tab: 'terbaru', page: 1, limit: 10);
+      if (!mounted) return;
+      final hasUnreadCommunity = _isCommunityFeedNew(posts);
+
+      setState(() {
+        _hasUnreadChat = hasUnreadChat;
+        _hasUnreadCommunity = hasUnreadCommunity;
+        _unreadChatCount = unreadCount;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _hasUnreadChat = false;
+        _hasUnreadCommunity = false;
+      });
+    }
+  }
+
+  String? _communityBaselineFirstId;
+  bool _isCommunityFeedNew(List<FeedPost> posts) {
+    if (posts.isEmpty) return false;
+    final firstId = posts.first.id;
+    final baseline = _communityBaselineFirstId;
+
+    if (baseline == null) {
+      _communityBaselineFirstId = firstId;
+      return false;
+    }
+
+    final isNew = firstId != baseline;
+    if (isNew) _communityBaselineFirstId = firstId;
+    return isNew;
   }
 
   void _onItemTapped(int index) {
@@ -30,42 +165,132 @@ class _MainScaffoldState extends State<MainScaffold> {
       _showAddTitikSheet();
       return;
     }
+
+    // Ketika pindah ke tab chat (index 3) — clear badge segera, lalu refresh
+    if (index == 3) {
+      // Optimistic: clear badge langsung saat masuk tab chat
+      setState(() {
+        _hasUnreadChat = false;
+        _unreadChatCount = 0;
+      });
+      // Re-check setelah screen sempat mark-as-read
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (mounted) _refreshChatUnread();
+      });
+    }
+
     setState(() => _currentIndex = index);
   }
 
-  void _showAddTitikSheet() {
+  Future<void> _showAddTitikSheet() async {
+    final repo = const DonationRepository();
+    late final UserModel user;
+    try {
+      user = await repo.getProfile();
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal memuat profil untuk akses fitur.')),
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
+
+    final role = user.role.toLowerCase();
+    final isKomunitas = role == 'komunitas';
+
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const AddTitikScreen(),
+      isScrollControlled: true,
+      builder: (ctx) => _AddActionSheet(
+        isKomunitas: isKomunitas,
+        onAddTitik: () {
+          Navigator.pop(ctx);
+          if (!context.mounted) return;
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (_) => AddTitikScreen(
+              onTitikCreated: (DonationRequest? createdRequest) {
+                if (!mounted) return;
+                // Invalidate home screen agar refresh
+                setState(() {
+                  _cachedScreens[0] = null;
+                });
+                if (createdRequest != null && context.mounted) {
+                  // Navigasi ke detail screen titik yang baru dibuat
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          RequestDetailScreen(request: createdRequest),
+                    ),
+                  );
+                } else {
+                  setState(() => _currentIndex = 0);
+                }
+              },
+            ),
+          );
+        },
+        onBerdonasi: () {
+          Navigator.pop(ctx);
+          if (!context.mounted) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MapsScreen()),
+          );
+        },
+      ),
     );
   }
 
-  // Map tap index → actual screen (skip index 2 = FAB)
-  static const List<Widget> _screens = [
-    HomeScreen(),     // 0
-    CommunityScreen(), // 1
-    SizedBox(),       // 2 (FAB placeholder, not shown)
-    MapsScreen(),     // 3
-    ProfileScreen(),  // 4
+  final List<Widget?> _cachedScreens = <Widget?>[
+    null, // Home
+    null, // Community
+    null, // Chat/Pesan
+    null, // Profile
   ];
 
   int get _displayIndex {
     if (_currentIndex < 2) return _currentIndex;
     if (_currentIndex == 2) return 0;
-    return _currentIndex - 1; // 3→2, 4→3
+    return _currentIndex - 1;
   }
-
-  List<Widget> get _stackScreens =>
-      [_screens[0], _screens[1], _screens[3], _screens[4]];
 
   @override
   Widget build(BuildContext context) {
+    final displayIndex = _displayIndex;
+
+    if (displayIndex >= 0 && displayIndex < _cachedScreens.length) {
+      if (_cachedScreens[displayIndex] == null) {
+        _cachedScreens[displayIndex] = switch (displayIndex) {
+          0 => HomeScreen(
+              onRefreshUnread: () {
+                if (mounted) _refreshChatUnread();
+              },
+            ),
+          1 => const CommunityScreen(),
+          2 => ConversationsListScreen(
+              // Jika ConversationsListScreen sudah tidak punya callback ini,
+              // hapus parameter ini agar tidak error.
+              ),
+          3 => const ProfileScreen(),
+          _ => const SizedBox.shrink(),
+        };
+      }
+    }
+
     return Scaffold(
       body: IndexedStack(
-        index: _displayIndex,
-        children: _stackScreens,
+        index: displayIndex,
+        children: List.generate(
+          _cachedScreens.length,
+          (i) => _cachedScreens[i] ?? const SizedBox.shrink(),
+        ),
       ),
       bottomNavigationBar: _buildBottomNav(),
     );
@@ -85,23 +310,32 @@ class _MainScaffoldState extends State<MainScaffold> {
       ),
       child: SafeArea(
         child: SizedBox(
-          height: 64,
+          height: 68,
           child: Row(
             children: [
-              _buildNavItem(0, Icons.home_rounded, Icons.home_outlined, 'Home'),
+              _buildNavItem(
+                  0, Icons.home_rounded, Icons.home_outlined, 'Beranda'),
               _buildNavItem(
                 1,
                 Icons.people_rounded,
                 Icons.people_outline_rounded,
-                'Community',
+                'Komunitas',
+                showDot: _hasUnreadCommunity,
               ),
               _buildFABItem(),
-              _buildNavItem(3, Icons.map_rounded, Icons.map_outlined, 'Maps'),
+              _buildNavItem(
+                3,
+                Icons.chat_rounded,
+                Icons.chat_outlined,
+                'Pesan',
+                showDot: _hasUnreadChat,
+                showCount: _unreadChatCount,
+              ),
               _buildNavItem(
                 4,
                 Icons.person_rounded,
                 Icons.person_outline_rounded,
-                'Profile',
+                'Profil',
               ),
             ],
           ),
@@ -114,9 +348,12 @@ class _MainScaffoldState extends State<MainScaffold> {
     int index,
     IconData selectedIcon,
     IconData unselectedIcon,
-    String label,
-  ) {
+    String label, {
+    bool showDot = false,
+    int showCount = 0,
+  }) {
     final isSelected = _currentIndex == index;
+    final hasBadge = showDot || showCount > 0;
     return Expanded(
       child: GestureDetector(
         onTap: () => _onItemTapped(index),
@@ -124,20 +361,54 @@ class _MainScaffoldState extends State<MainScaffold> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isSelected ? selectedIcon : unselectedIcon,
-              color:
-                  isSelected ? AppColors.primary : AppColors.textSecondary,
-              size: 24,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isSelected ? selectedIcon : unselectedIcon,
+                  color:
+                      isSelected ? AppColors.primary : AppColors.textSecondary,
+                  size: 24,
+                ),
+                if (hasBadge)
+                  Positioned(
+                    right: showCount > 0 ? -8 : -2,
+                    top: -4,
+                    child: Container(
+                      constraints:
+                          const BoxConstraints(minWidth: 14, minHeight: 14),
+                      padding: showCount > 0
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 3, vertical: 1)
+                          : EdgeInsets.zero,
+                      decoration: BoxDecoration(
+                        color: AppColors.urgencyHigh,
+                        borderRadius: BorderRadius.circular(7),
+                        border:
+                            Border.all(color: AppColors.surface, width: 1.5),
+                      ),
+                      child: showCount > 0
+                          ? Text(
+                              showCount > 99 ? '99+' : showCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                height: 1.2,
+                              ),
+                              textAlign: TextAlign.center,
+                            )
+                          : const SizedBox(width: 6, height: 6),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(
               label,
               style: AppTextStyles.labelSmall.copyWith(
-                color:
-                    isSelected ? AppColors.primary : AppColors.textSecondary,
-                fontWeight:
-                    isSelected ? FontWeight.w700 : FontWeight.w400,
+                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                 fontSize: 10,
               ),
             ),
@@ -182,6 +453,141 @@ class _MainScaffoldState extends State<MainScaffold> {
                 fontSize: 10,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddActionSheet extends StatelessWidget {
+  final bool isKomunitas;
+  final VoidCallback onAddTitik;
+  final VoidCallback onBerdonasi;
+
+  const _AddActionSheet({
+    required this.isKomunitas,
+    required this.onAddTitik,
+    required this.onBerdonasi,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Text('Pilih Aksi', style: AppTextStyles.headlineSmall),
+          const SizedBox(height: 20),
+          _ActionOption(
+            icon: Icons.add_location_alt_rounded,
+            label: 'Tambahkan Titik',
+            subtitle: isKomunitas
+                ? 'Buat titik bantuan baru di lokasimu'
+                : 'Hanya komunitas yang dapat melakukan ini',
+            enabled: isKomunitas,
+            onTap: isKomunitas ? onAddTitik : null,
+          ),
+          const SizedBox(height: 12),
+          _ActionOption(
+            icon: Icons.volunteer_activism_rounded,
+            label: 'Berdonasi',
+            subtitle: 'Lihat titik bantuan dan mulai berdonasi',
+            enabled: true,
+            onTap: onBerdonasi,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  const _ActionOption({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.enabled,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = enabled ? AppColors.primary : AppColors.textSecondary;
+    final bg = enabled ? AppColors.primaryContainer : AppColors.surfaceVariant;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: enabled
+                ? AppColors.primary.withOpacity(0.3)
+                : AppColors.divider,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: enabled ? AppColors.primary : AppColors.textSecondary,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: AppTextStyles.titleSmall.copyWith(color: color),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: enabled
+                          ? AppColors.textSecondary
+                          : AppColors.textSecondary.withOpacity(0.7),
+                      fontStyle: enabled ? FontStyle.normal : FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!enabled)
+              Icon(
+                Icons.lock_outline_rounded,
+                color: AppColors.textSecondary,
+                size: 18,
+              ),
           ],
         ),
       ),
