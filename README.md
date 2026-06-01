@@ -178,24 +178,28 @@ Titik bantuan ditampilkan dalam peta dengan warna berdasarkan urgensi:
 <table>
 <tr>
 <td align="center" width="25%">
+<img src="https://github.com/zaaammmmm.png" width="100px"/><br>
 <b>Ahmad Zamroni Trikarta</b><br>
 <i>Project Manager</i><br>
 <i>Fullstack Developer</i>
 <a href="https://github.com/zaaammmmm">@zaaammmmm</a>
 </td>
 <td align="center" width="25%">
+<img src="https://github.com/NUGRAHA18.png" width="100px"/><br>
 <b>Agung Nugraha</b><br>
 <i>Backend Developer</i><br>
 <i>Database Architect</i><br>
 <a href="https://github.com/NUGRAHA18">@NUGRAHA18</a>
 </td>
 <td align="center" width="25%">
+<img src="https://github.com/zakiibnu723.png" width="100px"/><br>
 <b>Ibnu Zaki</b><br>
 <i>Frontend Developer</i><br>
 <i>UI Implementation</i>
 <a href="https://github.com/zakiibnu723">@zakiibnu723</a>
 </td>
 <td align="center" width="25%">
+<img src="https://github.com/musthofaaslam.png" width="100px"/><br>   
 <b>Ahmad Mustofa Aslam</b><br>
 <i>UI/UX Designer</i><br>
 <i>Tester</i>
