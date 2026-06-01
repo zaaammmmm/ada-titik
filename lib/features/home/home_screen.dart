@@ -605,7 +605,8 @@ class _HomeScreenState extends State<HomeScreen>
                 onDetail: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => NewsDetailScreen(item: news_models.NewsItem(
+                    builder: (_) => NewsDetailScreen(
+                        item: news_models.NewsItem(
                       title: article.title,
                       subtitle: article.subtitle,
                       content: article.content,
@@ -678,7 +679,8 @@ class _UrgentCardWithDocs extends StatefulWidget {
   final DonationRequest request;
   final VoidCallback onTap;
   final DonationRepository repo;
-  const _UrgentCardWithDocs({required this.request, required this.onTap, required this.repo});
+  const _UrgentCardWithDocs(
+      {required this.request, required this.onTap, required this.repo});
 
   @override
   State<_UrgentCardWithDocs> createState() => _UrgentCardWithDocsState();
@@ -701,7 +703,10 @@ class _UrgentCardWithDocsState extends State<_UrgentCardWithDocs> {
       if (docs.isNotEmpty) {
         final url = docs.first['photo_url']?.toString();
         if (url != null && url.isNotEmpty) {
-          setState(() { _coverUrl = url; _loadedDocs = true; });
+          setState(() {
+            _coverUrl = url;
+            _loadedDocs = true;
+          });
           return;
         }
       }
@@ -725,7 +730,8 @@ class _UrgentCard extends StatelessWidget {
   final DonationRequest request;
   final VoidCallback onTap;
   final String? coverImageUrl;
-  const _UrgentCard({required this.request, required this.onTap, this.coverImageUrl});
+  const _UrgentCard(
+      {required this.request, required this.onTap, this.coverImageUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -852,9 +858,8 @@ class _UrgentCard extends StatelessWidget {
 
   // ✅ Improved image widget dengan better error handling
   Widget _buildImageWidget() {
-    final imageToShow = coverImageUrl?.isNotEmpty == true
-        ? coverImageUrl!
-        : request.imageUrl;
+    final imageToShow =
+        coverImageUrl?.isNotEmpty == true ? coverImageUrl! : request.imageUrl;
     if (imageToShow != null && imageToShow.isNotEmpty) {
       return Image.network(
         imageToShow,
@@ -921,12 +926,13 @@ class _ArticleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onDetail ?? () async {
-        final uri = Uri.parse(article.url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-      },
+      onTap: onDetail ??
+          () async {
+            final uri = Uri.parse(article.url);
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          },
       child: Container(
         width: 200,
         padding: const EdgeInsets.all(14),
