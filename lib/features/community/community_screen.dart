@@ -15,6 +15,7 @@ import '../../features/donation/data/donation_repository.dart';
 import '../../features/community/data/community_repository.dart';
 import '../../features/community/community_write_screen.dart';
 import '../../features/community/comments_screen.dart';
+import '../../features/community/feed_post_detail_screen.dart';
 import '../../features/community/report_dialog.dart';
 import '../../shared/models/models.dart';
 import '../../shared/widgets/app_widgets.dart';
@@ -299,6 +300,21 @@ class _CommunityScreenState extends State<CommunityScreen>
                 post: p,
                 isLikeLoading: _likeLoadingByPostId[p.id] ?? false,
                 onLike: () => _handleLike(p.id),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => FeedPostDetailScreen(
+                      post: p,
+                      onPostUpdated: (updated) {
+                        // Update optimistic state di parent
+                        setState(() {
+                          _likedByMeByPostId[updated.id] = updated.likedByMe;
+                          _likesCountByPostId[updated.id] = updated.likes;
+                        });
+                      },
+                    ),
+                  ),
+                ),
               );
             },
           ),
@@ -348,16 +364,21 @@ class _FeedCard extends StatelessWidget {
   final FeedPost post;
   final VoidCallback? onLike;
   final bool isLikeLoading;
+  final VoidCallback? onTap;
 
   const _FeedCard({
     required this.post,
     this.onLike,
     this.isLikeLoading = false,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       color: Colors.white,
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.only(bottom: 8),
@@ -548,7 +569,8 @@ class _FeedCard extends StatelessWidget {
           ),
         ],
       ),
-    );
+      ), // closes Container
+    ); // closes GestureDetector
   }
 
   Widget _feedTag(FeedPostType type) {

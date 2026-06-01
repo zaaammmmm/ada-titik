@@ -60,7 +60,7 @@ class _UnitChip extends StatelessWidget {
 }
 
 class AddTitikScreen extends StatefulWidget {
-  final VoidCallback? onTitikCreated;
+  final void Function(DonationRequest? createdRequest)? onTitikCreated;
   const AddTitikScreen({super.key, this.onTitikCreated});
 
   @override
@@ -559,7 +559,7 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                           : () async {
                               setState(() => _isSubmitting = true);
                               try {
-                                await _createDonation();
+                                final created = await _createDonation();
                                 if (!context.mounted) return;
                                 Navigator.pop(context);
                                 ScaffoldMessenger.of(context).showSnackBar(
@@ -568,8 +568,8 @@ class _AddTitikScreenState extends State<AddTitikScreen> {
                                     backgroundColor: AppColors.primary,
                                   ),
                                 );
-                                // Callback agar MainScaffold bisa auto-refresh
-                                widget.onTitikCreated?.call();
+                                // Callback agar MainScaffold navigasi ke detail titik baru
+                                widget.onTitikCreated?.call(created);
                               } catch (e) {
                                 if (!context.mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(

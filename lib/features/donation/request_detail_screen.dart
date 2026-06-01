@@ -8,6 +8,7 @@ import '../../core/constants/app_text_styles.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/providers/auth_provider.dart';
 import '../../core/services/location_service.dart';
@@ -45,7 +46,31 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   String? _selectedReview;
   int? _selectedScore;
   bool _submittingRating = false;
+  // _hasShownRatingPrompt: in-memory guard (reset bila app restart tidak masalah,
+  // karena kita juga simpan ke SharedPreferences agar benar-benar hanya sekali).
   bool _hasShownRatingPrompt = false;
+
+  // Key untuk SharedPreferences: "rating_prompt_shown_{userId}_{pointId}"
+  String get _ratingPromptKey {
+    final userId = ref.read(authProvider).user?.id ?? 'unknown';
+    return 'rating_prompt_shown_${userId}_${widget.request.id}';
+  }
+
+  Future<bool> _hasRatingPromptBeenShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_ratingPromptKey) ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _markRatingPromptShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_ratingPromptKey, true);
+    } catch (_) {}
+  }
 
   // Auto-refresh
   // Status partisipasi donatur saat ini ('requested', 'accepted', 'completed', null)
@@ -107,12 +132,16 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         final prevState = _myParticipation?['state']?.toString();
         setState(() => _myParticipation = p);
 
-        // No.4 FIX: Jika baru saja berubah ke 'accepted', arahkan ke rating screen.
+        // Tampilkan rating prompt hanya sekali: cek in-memory + SharedPreferences.
         final newState = p?['state']?.toString().toLowerCase();
+        final alreadyShownPersistent = await _hasRatingPromptBeenShown();
+
         if (!_hasShownRatingPrompt &&
+            !alreadyShownPersistent &&
             newState == 'accepted' &&
             prevState?.toLowerCase() != 'accepted') {
           _hasShownRatingPrompt = true;
+          await _markRatingPromptShown();
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             _showRatingPrompt();

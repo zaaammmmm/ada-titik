@@ -76,9 +76,100 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
-class _ProfileContent extends StatelessWidget {
+class _ProfileContent extends StatefulWidget {
   final UserModel user;
   final Future<void> Function() onLogout;
+
+  const _ProfileContent({
+    required this.user,
+    required this.onLogout,
+  });
+
+  @override
+  State<_ProfileContent> createState() => _ProfileContentState();
+}
+
+class _ProfileContentState extends State<_ProfileContent> {
+  UserModel get user => widget.user;
+  Future<void> Function() get onLogout => widget.onLogout;
+
+  late Future<_ProfileStats> _statsFuture;
+  final DonationRepository _repo = const DonationRepository();
+
+  @override
+  void initState() {
+    super.initState();
+    _statsFuture = _loadStats();
+  }
+
+  Future<_ProfileStats> _loadStats() async {
+    try {
+      final isKomunitas = user.role.toLowerCase() == 'komunitas';
+      final activities = await _repo.getUserActivity(limit: 100);
+
+      int activityCount = 0;
+      int earnedPoints = 0;
+
+      for (final a in activities) {
+        final type = a.iconType.toLowerCase();
+        final title = a.title.toLowerCase();
+
+        if (type == 'rating' ||
+            title.contains('rating') ||
+            title.contains('ulasan')) {
+          activityCount++;
+          earnedPoints += 15;
+        } else if (type == 'participant_accepted' ||
+            type == 'donation' ||
+            title.contains('diterima') ||
+            title.contains('accept') ||
+            title.contains('berangkat')) {
+          activityCount++;
+          earnedPoints += 50;
+        } else if (type == 'success' ||
+            title.contains('selesai') ||
+            title.contains('complete') ||
+            title.contains('berhasil')) {
+          activityCount++;
+          earnedPoints += 100;
+        } else if (isKomunitas &&
+            (type == 'donation_managed' ||
+                title.contains('titik') ||
+                title.contains('membuat') ||
+                title.contains('buat'))) {
+          activityCount++;
+          earnedPoints += 30;
+        } else if (isKomunitas &&
+            (type == 'community_post' ||
+                title.contains('postingan') ||
+                title.contains('posting') ||
+                title.contains('feed'))) {
+          activityCount++;
+          earnedPoints += 10;
+        } else if (isKomunitas &&
+            (title.contains('menyelesaikan') ||
+                title.contains('verifikasi') ||
+                title.contains('konfirmasi'))) {
+          activityCount++;
+          earnedPoints += 25;
+        }
+      }
+
+      final backendPoints = user.communityPoints;
+      final finalPoints =
+          earnedPoints > backendPoints ? earnedPoints : backendPoints;
+
+      return _ProfileStats(
+        activityCount: activityCount > 0 ? activityCount : user.donationCount,
+        earnedPoints: finalPoints,
+      );
+    } catch (_) {
+      return _ProfileStats(
+        activityCount: user.donationCount,
+        earnedPoints: user.communityPoints,
+      );
+    }
+  }
 
   Future<void> _openEditProfileDialog(BuildContext context,
       {required UserModel user}) async {
@@ -86,18 +177,12 @@ class _ProfileContent extends StatelessWidget {
       context: context,
       builder: (context) => EditProfileDialog(user: user),
     );
-    // Parent screen refresh is handled by reloading profile in next iteration; for now just close.
     if (result == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profil berhasil diperbarui')),
       );
     }
   }
-
-  const _ProfileContent({
-    required this.user,
-    required this.onLogout,
-  });
 
   @override
   Widget build(BuildContext context) {
@@ -354,37 +439,48 @@ class _ProfileContent extends StatelessWidget {
   }
 
   Widget _buildImpactCards() {
-    // Untuk komunitas: donationCount = titik yang dibuat, communityPoints = poin dari membuat titik
-    // Untuk donatur: donationCount = rating yang diberikan, communityPoints = poin dari rating
     final isKomunitas = user.role.toLowerCase() == 'komunitas';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          _ImpactCard(
-            icon: Icons.local_shipping_outlined,
-            label: 'Point Helped',
-            value: '\${user.pointsHelped}',
-            sub: isKomunitas
-                ? 'Jumlah titik yang berhasil dibantu'
-                : 'Titik yang telah Anda bantu',
-            iconColor: const Color(0xFF1565C0),
-            iconBg: const Color(0xFFE3F2FD),
+    return FutureBuilder<_ProfileStats>(
+      future: _statsFuture,
+      builder: (context, snapshot) {
+        final stats = snapshot.data;
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+
+        final activityValue =
+            loading ? '...' : (stats?.activityCount ?? 0).toString();
+        final pointsValue =
+            loading ? '...' : (stats?.earnedPoints ?? 0).toString();
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              _ImpactCard(
+                icon: Icons.local_activity_rounded,
+                label: 'Activity Count',
+                value: activityValue,
+                sub: isKomunitas
+                    ? 'Rating diberikan + titik dibuat + postingan + accept'
+                    : 'Rating diberikan + donasi berhasil + selesai',
+                iconColor: const Color(0xFF00897B),
+                iconBg: const Color(0xFFE0F2F1),
+              ),
+              const SizedBox(height: 12),
+              _ImpactCard(
+                icon: Icons.stars_rounded,
+                label: 'Poin Diperoleh',
+                value: pointsValue,
+                sub: isKomunitas
+                    ? '+30 titik, +25 accept, +10 postingan, +15 rating'
+                    : '+15 rating, +50 berangkat, +100 donasi selesai',
+                iconColor: const Color(0xFF1565C0),
+                iconBg: const Color(0xFFE3F2FD),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          _ImpactCard(
-            icon: Icons.emoji_events_outlined,
-            label: 'Poin ${isKomunitas ? "Komunitas" : "Donatur"}',
-            value: '${user.communityPoints}',
-            sub: isKomunitas
-                ? 'Poin dari membuat titik & donasi'
-                : 'Poin dari memberikan rating',
-            iconColor: AppColors.textSecondary,
-            iconBg: AppColors.surfaceVariant,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -649,4 +745,11 @@ class _ImpactCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ProfileStats {
+  final int activityCount;
+  final int earnedPoints;
+  const _ProfileStats(
+      {required this.activityCount, required this.earnedPoints});
 }

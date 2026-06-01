@@ -25,8 +25,12 @@ import '../search/search_screen.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 
+/// Callback opsional agar MainScaffold bisa listen event dari HomeScreen
+typedef VoidCallback = void Function();
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onRefreshUnread;
+  const HomeScreen({super.key, this.onRefreshUnread});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -38,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   late Future<UserModel> _profileFuture;
   late Future<List<DonationRequest>> _urgentFuture;
-  late Future<List<ActivityItem>> _activityFuture;
+  late Future<_HomeStats> _statsFuture;
   int _unreadNotifCount = 0;
   Position? _userPosition;
 
@@ -47,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     _profileFuture = _repo.getProfile();
     _urgentFuture = _fetchUrgentRequests();
-    _activityFuture = _repo.getUserActivity(limit: 4);
+    _statsFuture = _fetchStats();
     WidgetsBinding.instance.addObserver(this);
     _subscribeRealtime();
     _loadUnreadCount();
@@ -69,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _subscribeRealtime() {
-    // Realtime: reload hanya saat ada perubahan di donation_points
     final supabase = SupabaseRealtimeService();
     supabase.subscribeToDonationPoints(onUpdate: () {
       if (mounted) _refreshAll();
@@ -80,9 +83,92 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() {
       _profileFuture = _repo.getProfile();
       _urgentFuture = _fetchUrgentRequests();
-      _activityFuture = _repo.getUserActivity(limit: 4);
+      _statsFuture = _fetchStats();
     });
     _loadUnreadCount();
+  }
+
+  /// Hitung activity count & user points dari aktivitas nyata pengguna.
+  /// Activity count: jumlah rating diberikan + titik di-accept owner + pembuatan
+  /// titik (komunitas) + pembuatan postingan komunitas (komunitas).
+  /// User points: akumulasi poin dari setiap aksi.
+  Future<_HomeStats> _fetchStats() async {
+    try {
+      final profile = await _repo.getProfile();
+      final isKomunitas = profile.role.toLowerCase() == 'komunitas';
+
+      final activities = await _repo.getUserActivity(limit: 100);
+
+      int activityCount = 0;
+      int earnedPoints = 0;
+
+      for (final a in activities) {
+        final type = a.iconType.toLowerCase();
+        final title = a.title.toLowerCase();
+
+        // Pemberian rating (donatur)
+        if (type == 'rating' || title.contains('rating') || title.contains('ulasan')) {
+          activityCount++;
+          earnedPoints += 15; // +15 poin per rating
+        }
+        // Donasi diterima / berangkat di-accept (donatur)
+        else if (type == 'participant_accepted' ||
+            type == 'donation' ||
+            title.contains('diterima') ||
+            title.contains('accept') ||
+            title.contains('berangkat')) {
+          activityCount++;
+          earnedPoints += 50; // +50 poin donasi berhasil berangkat
+        }
+        // Donasi selesai (completed)
+        else if (type == 'success' ||
+            title.contains('selesai') ||
+            title.contains('complete') ||
+            title.contains('berhasil')) {
+          activityCount++;
+          earnedPoints += 100; // +100 poin donasi selesai
+        }
+        // Pembuatan titik (komunitas)
+        else if (isKomunitas &&
+            (type == 'donation_managed' ||
+                title.contains('titik') ||
+                title.contains('membuat') ||
+                title.contains('buat'))) {
+          activityCount++;
+          earnedPoints += 30; // +30 poin per titik yang dibuat
+        }
+        // Pembuatan postingan komunitas feed (komunitas)
+        else if (isKomunitas &&
+            (type == 'community_post' ||
+                title.contains('postingan') ||
+                title.contains('posting') ||
+                title.contains('feed'))) {
+          activityCount++;
+          earnedPoints += 10; // +10 poin per postingan
+        }
+        // Penyelesaian accept dari owner (komunitas accept)
+        else if (isKomunitas &&
+            (title.contains('menyelesaikan') ||
+                title.contains('verifikasi') ||
+                title.contains('konfirmasi'))) {
+          activityCount++;
+          earnedPoints += 25; // +25 poin penyelesaian accept
+        }
+      }
+
+      // Bonus poin berdasarkan jumlah total donasi dari profile
+      // (misal poin dari donasi uang via backend)
+      final backendPoints = profile.communityPoints;
+      // Gabungkan: gunakan nilai terbesar antara kalkulasi frontend vs backend
+      final finalPoints = earnedPoints > backendPoints ? earnedPoints : backendPoints;
+
+      return _HomeStats(
+        activityCount: activityCount > 0 ? activityCount : profile.donationCount,
+        earnedPoints: finalPoints,
+      );
+    } catch (_) {
+      return const _HomeStats(activityCount: 0, earnedPoints: 0);
+    }
   }
 
   Future<List<DonationRequest>> _fetchUrgentRequests() async {
@@ -98,20 +184,15 @@ class _HomeScreenState extends State<HomeScreen>
       }
     }
 
-    // Hanya tampilkan urgency tinggi (urgent) di home
     var items =
         combined.values.where((r) => r.urgency == UrgencyLevel.urgent).toList();
 
-    // Hitung jarak dari posisi user jika tersedia
     final pos = _userPosition;
     if (pos != null) {
       items = items.map((req) {
         if (req.distanceKm <= 0) {
           final dMeters = _haversineMeters(
-            pos.latitude,
-            pos.longitude,
-            req.latitude,
-            req.longitude,
+            pos.latitude, pos.longitude, req.latitude, req.longitude,
           );
           return DonationRequest(
             id: req.id,
@@ -141,7 +222,6 @@ class _HomeScreenState extends State<HomeScreen>
       }).toList();
     }
 
-    // Urutkan: jarak terdekat (dan prioritas urgency tinggi di depan)
     items.sort((a, b) {
       final aKm = a.distanceKm > 0 ? a.distanceKm : double.maxFinite;
       final bKm = b.distanceKm > 0 ? b.distanceKm : double.maxFinite;
@@ -183,18 +263,14 @@ class _HomeScreenState extends State<HomeScreen>
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             backgroundColor: AppColors.background,
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
         if (snapshot.hasError || !snapshot.hasData) {
           return const Scaffold(
             backgroundColor: AppColors.background,
-            body: Center(
-              child: Text('Failed to load profile'),
-            ),
+            body: Center(child: Text('Failed to load profile')),
           );
         }
 
@@ -212,7 +288,7 @@ class _HomeScreenState extends State<HomeScreen>
                   builder: (_) => const NotificationScreen(),
                 ),
               );
-              _loadUnreadCount(); // refresh count after viewing
+              _loadUnreadCount();
             },
           ),
           body: RefreshIndicator(
@@ -228,15 +304,13 @@ class _HomeScreenState extends State<HomeScreen>
                     hint: 'Search for aid requests, categories...',
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const SearchScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const SearchScreen()),
                     ),
                   ),
                   const SizedBox(height: 20),
                   _buildGreeting(user),
                   const SizedBox(height: 16),
-                  _buildStatsRow(user),
+                  _buildStatsRow(),
                   const SizedBox(height: 12),
                   _buildActiveRequestBanner(context),
                   const SizedBox(height: 24),
@@ -246,8 +320,7 @@ class _HomeScreenState extends State<HomeScreen>
                     onAction: () => Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const ActiveRequestsScreen(),
-                      ),
+                          builder: (_) => const ActiveRequestsScreen()),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -255,14 +328,6 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(height: 24),
                   _buildArticlesSection(),
                   const SizedBox(height: 24),
-
-                  // Text(
-                  //   'Aktivitas Terbaru',
-                  //   style: AppTextStyles.headlineMedium,
-                  // ),
-                  // const SizedBox(height: 12),
-                  // _buildActivityList(),
-                  // const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -276,10 +341,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Halo, ${user.name}!',
-          style: AppTextStyles.displayMedium,
-        ),
+        Text('Halo, ${user.name}!', style: AppTextStyles.displayMedium),
         const SizedBox(height: 4),
         Text(
           'Keramahan Anda menciptakan gelombang. Siap membuat dampak hari ini?',
@@ -291,30 +353,36 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildStatsRow(UserModel user) {
-    return Row(
-      children: [
-        Expanded(
-          child: _StatsCard(
-            icon: Icons.favorite_rounded,
-            number: user.donationCount.toString(),
-            label: 'ACTIVITY COUNT',
-            color: AppColors.statsTeal,
-            textColor: Colors.white,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatsCard(
-            icon: Icons.location_on_rounded,
-            number: user.pointsHelped > 0 ? user.pointsHelped.toString() : '0',
-            label: 'POINTS HELPED',
-            color: AppColors.statsLavender,
-            textColor: AppColors.textPrimary,
-            iconColor: AppColors.statsBlue,
-          ),
-        ),
-      ],
+  Widget _buildStatsRow() {
+    return FutureBuilder<_HomeStats>(
+      future: _statsFuture,
+      builder: (context, snapshot) {
+        final stats = snapshot.data ?? const _HomeStats(activityCount: 0, earnedPoints: 0);
+        return Row(
+          children: [
+            Expanded(
+              child: _StatsCard(
+                icon: Icons.local_activity_rounded,
+                number: stats.activityCount.toString(),
+                label: 'ACTIVITY COUNT',
+                color: AppColors.statsTeal,
+                textColor: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _StatsCard(
+                icon: Icons.stars_rounded,
+                number: stats.earnedPoints.toString(),
+                label: 'POIN DIPEROLEH',
+                color: AppColors.statsLavender,
+                textColor: AppColors.textPrimary,
+                iconColor: AppColors.statsBlue,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -373,34 +441,25 @@ class _HomeScreenState extends State<HomeScreen>
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            // Debug: Tampilkan error detail
-            debugPrint('Error loading urgent requests: ${snapshot.error}');
             return Center(
               child: Text(
                 'Gagal memuat kebutuhan mendesak',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
               ),
             );
           }
 
           final ordered = snapshot.data ?? [];
-
           if (ordered.isEmpty) {
             return Center(
               child: Text(
                 'Belum ada kebutuhan mendesak',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary),
               ),
             );
           }
-
-          debugPrint(
-            'Tampilkan ${ordered.length} kebutuhan urgent',
-          );
 
           return ListView.separated(
             scrollDirection: Axis.horizontal,
@@ -408,11 +467,6 @@ class _HomeScreenState extends State<HomeScreen>
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final req = ordered[index];
-
-              debugPrint(
-                'Card $index: ${req.title} - Image: ${req.imageUrl}',
-              );
-
               return _UrgentCard(
                 request: req,
                 onTap: () => Navigator.push(
@@ -429,147 +483,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildActivityList() {
-    return FutureBuilder<List<ActivityItem>>(
-      future: _activityFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: const Center(child: CircularProgressIndicator()),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Gagal memuat aktivitas. Silakan coba lagi.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          );
-        }
-
-        final activities = snapshot.data ?? [];
-        if (activities.isEmpty) {
-          return Container(
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Belum ada aktivitas terbaru. Silakan ulangi lagi nanti.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.textSecondary,
-              ),
-            ),
-          );
-        }
-
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.divider),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('', style: AppTextStyles.headlineMedium),
-              const SizedBox(height: 8),
-              ...List.generate(activities.length, (i) {
-                final activity = activities[i];
-                return Column(
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: _activityIconBackground(activity.iconType),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _activityIconData(activity.iconType),
-                            color: _activityIconColor(activity.iconType),
-                            size: 18,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(activity.title,
-                                  style: AppTextStyles.bodyMedium),
-                              const SizedBox(height: 2),
-                              Text(
-                                activity.timeAgo,
-                                style: AppTextStyles.bodySmall,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (i < activities.length - 1)
-                      const Divider(height: 20, color: Colors.transparent),
-                  ],
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  IconData _activityIconData(String type) {
-    return switch (type) {
-      'success' => Icons.check_circle_rounded,
-      'donation' => Icons.favorite_rounded,
-      'participant_accepted' => Icons.people_rounded,
-      _ => Icons.campaign_rounded,
-    };
-  }
-
-  Color _activityIconBackground(String type) {
-    return switch (type) {
-      'success' => AppColors.statusCompletedLight,
-      'donation' => AppColors.urgencyHighLight,
-      'participant_accepted' => AppColors.primaryContainer,
-      _ => AppColors.urgencyMediumLight,
-    };
-  }
-
-  Color _activityIconColor(String type) {
-    return switch (type) {
-      'success' => AppColors.statusCompleted,
-      'donation' => AppColors.urgencyHigh,
-      'participant_accepted' => AppColors.primary,
-      _ => AppColors.urgencyMedium,
-    };
-  }
-
   Widget _buildArticlesSection() {
-    // Ambil dari repository berita (statik open-source links)
     final all = const NewsRepository().getAll();
     final show = all.take(6).toList(growable: false);
 
@@ -625,6 +539,13 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
+/// Data class untuk stats di home screen
+class _HomeStats {
+  final int activityCount;
+  final int earnedPoints;
+  const _HomeStats({required this.activityCount, required this.earnedPoints});
+}
+
 class _StatsCard extends StatelessWidget {
   final IconData icon;
   final String number;
@@ -675,63 +596,11 @@ class _StatsCard extends StatelessWidget {
   }
 }
 
-class _UrgentCardWithDocs extends StatefulWidget {
-  final DonationRequest request;
-  final VoidCallback onTap;
-  final DonationRepository repo;
-  const _UrgentCardWithDocs(
-      {required this.request, required this.onTap, required this.repo});
-
-  @override
-  State<_UrgentCardWithDocs> createState() => _UrgentCardWithDocsState();
-}
-
-class _UrgentCardWithDocsState extends State<_UrgentCardWithDocs> {
-  String? _coverUrl;
-  bool _loadedDocs = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadFirstDoc();
-  }
-
-  Future<void> _loadFirstDoc() async {
-    try {
-      final docs = await widget.repo.getDocumentation(widget.request.id);
-      if (!mounted) return;
-      if (docs.isNotEmpty) {
-        final url = docs.first['photo_url']?.toString();
-        if (url != null && url.isNotEmpty) {
-          setState(() {
-            _coverUrl = url;
-            _loadedDocs = true;
-          });
-          return;
-        }
-      }
-      if (mounted) setState(() => _loadedDocs = true);
-    } catch (_) {
-      if (mounted) setState(() => _loadedDocs = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _UrgentCard(
-      request: widget.request,
-      onTap: widget.onTap,
-      coverImageUrl: _coverUrl,
-    );
-  }
-}
-
 class _UrgentCard extends StatelessWidget {
   final DonationRequest request;
   final VoidCallback onTap;
   final String? coverImageUrl;
-  const _UrgentCard(
-      {required this.request, required this.onTap, this.coverImageUrl});
+  const _UrgentCard({required this.request, required this.onTap, this.coverImageUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -754,11 +623,8 @@ class _UrgentCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image - dengan handling lebih baik untuk error dan loading
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
                 children: [
                   Container(
@@ -773,18 +639,15 @@ class _UrgentCard extends StatelessWidget {
                       right: 10,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: AppColors.urgencyHigh,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           'Urgent',
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: Colors.white,
-                          ),
+                          style: AppTextStyles.labelSmall
+                              .copyWith(color: Colors.white),
                         ),
                       ),
                     ),
@@ -798,9 +661,8 @@ class _UrgentCard extends StatelessWidget {
                 children: [
                   Text(
                     request.title,
-                    style: AppTextStyles.titleSmall.copyWith(
-                      color: AppColors.primary,
-                    ),
+                    style: AppTextStyles.titleSmall
+                        .copyWith(color: AppColors.primary),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -812,7 +674,6 @@ class _UrgentCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
-                  // Distance chip
                   if (request.distanceKm > 0)
                     Container(
                       margin: const EdgeInsets.only(bottom: 6),
@@ -856,7 +717,6 @@ class _UrgentCard extends StatelessWidget {
     );
   }
 
-  // ✅ Improved image widget dengan better error handling
   Widget _buildImageWidget() {
     final imageToShow =
         coverImageUrl?.isNotEmpty == true ? coverImageUrl! : request.imageUrl;
@@ -864,10 +724,7 @@ class _UrgentCard extends StatelessWidget {
       return Image.network(
         imageToShow,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('Image error for ${request.title}: $error');
-          return _placeholderImage();
-        },
+        errorBuilder: (context, error, stackTrace) => _placeholderImage(),
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Center(
@@ -959,7 +816,8 @@ class _ArticleCard extends StatelessWidget {
                     color: AppColors.primaryContainer,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(article.icon, color: AppColors.primary, size: 16),
+                  child:
+                      Icon(article.icon, color: AppColors.primary, size: 16),
                 ),
                 const SizedBox(width: 6),
                 Container(
@@ -998,11 +856,8 @@ class _ArticleCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 2),
-                      const Icon(
-                        Icons.arrow_forward_rounded,
-                        color: AppColors.primary,
-                        size: 12,
-                      ),
+                      const Icon(Icons.arrow_forward_rounded,
+                          color: AppColors.primary, size: 12),
                     ],
                   ),
                 ),

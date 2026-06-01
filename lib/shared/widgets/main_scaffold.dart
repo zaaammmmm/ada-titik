@@ -13,6 +13,7 @@ import '../../features/community/data/community_repository.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/donation/add_titik_screen.dart';
 import '../../features/donation/data/donation_repository.dart';
+import '../../features/donation/request_detail_screen.dart';
 import '../../features/maps/maps_screen.dart';
 import '../../shared/models/models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,8 +33,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   bool _hasUnreadCommunity = false;
   int _unreadChatCount = 0;
 
-  Timer? _chatRefreshTimer;
-  final SupabaseRealtimeService _realtime = SupabaseRealtimeService();
+  // Pakai instance berbeda agar masing-masing subscription tidak saling override
+  final SupabaseRealtimeService _realtimeConv = SupabaseRealtimeService();
 
   @override
   void initState() {
@@ -41,20 +42,15 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     _currentIndex = widget.initialIndex;
     _refreshUnreadIndicators();
 
-    // Polling ringan setiap 30 detik untuk chat unread count
-    _chatRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) _refreshChatUnread();
-    });
-
-    // Subscribe realtime untuk update chat conversations
+    // Subscribe realtime conversations — update badge segera saat ada perubahan
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final userId = ref.read(authProvider).user?.id;
       if (userId == null || userId.isEmpty) return;
-      // Subscribe realtime conversations
-      final realtimeConv = SupabaseRealtimeService();
-      await realtimeConv.subscribeToChatConversations(
+
+      await _realtimeConv.subscribeToChatConversations(
         currentUserId: userId,
         onUpsert: (_) {
+          // Refresh unread count secara realtime setiap ada perubahan conversation
           if (mounted) _refreshChatUnread();
         },
       );
@@ -63,7 +59,6 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
 
   @override
   void dispose() {
-    _chatRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -132,11 +127,15 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       return;
     }
 
-    // Ketika pindah ke tab chat (index 3), refresh unread count
+    // Ketika pindah ke tab chat (index 3) — clear badge segera, lalu refresh
     if (index == 3) {
-      // Tandai sebagai sudah dilihat — refresh setelah sedikit delay agar
-      // ConversationsListScreen sempat mark-as-read
-      Future.delayed(const Duration(milliseconds: 600), () {
+      // Optimistic: clear badge langsung saat masuk tab chat
+      setState(() {
+        _hasUnreadChat = false;
+        _unreadChatCount = 0;
+      });
+      // Re-check setelah screen sempat mark-as-read
+      Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) _refreshChatUnread();
       });
     }
@@ -176,15 +175,23 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
             builder: (_) => AddTitikScreen(
-              onTitikCreated: () {
-                // Refresh home screen saat titik baru dibuat
-                if (mounted) {
-                  setState(() {
-                    // Force-rebuild home screen
-                    _cachedScreens[0] = null;
-                  });
-                  // Navigate ke home
-                  _currentIndex = 0;
+              onTitikCreated: (DonationRequest? createdRequest) {
+                if (!mounted) return;
+                // Invalidate home screen agar refresh
+                setState(() {
+                  _cachedScreens[0] = null;
+                });
+                if (createdRequest != null && context.mounted) {
+                  // Navigasi ke detail screen titik yang baru dibuat
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          RequestDetailScreen(request: createdRequest),
+                    ),
+                  );
+                } else {
+                  setState(() => _currentIndex = 0);
                 }
               },
             ),
@@ -192,14 +199,12 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
         },
         onBerdonasi: () {
           Navigator.pop(ctx);
-          // Fix #5: navigasi ke Maps screen (index 2 di cachedScreens)
           setState(() => _currentIndex = 3);
         },
       ),
     );
   }
 
-  // Map tap index → actual screen (skip index 2 = FAB)
   final List<Widget?> _cachedScreens = <Widget?>[
     null, // Home
     null, // Community
@@ -208,22 +213,28 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   ];
 
   int get _displayIndex {
-    if (_currentIndex < 2) return _currentIndex; // 0->0,1->1
-    if (_currentIndex == 2) return 0; // FAB
-    return _currentIndex - 1; // 3->2,4->3,5->4
+    if (_currentIndex < 2) return _currentIndex;
+    if (_currentIndex == 2) return 0;
+    return _currentIndex - 1;
   }
 
   @override
   Widget build(BuildContext context) {
     final displayIndex = _displayIndex;
 
-    // Lazy init screens
     if (displayIndex >= 0 && displayIndex < _cachedScreens.length) {
       if (_cachedScreens[displayIndex] == null) {
         _cachedScreens[displayIndex] = switch (displayIndex) {
-          0 => const HomeScreen(),
+          0 => HomeScreen(
+              onRefreshUnread: () {
+                if (mounted) _refreshChatUnread();
+              },
+            ),
           1 => const CommunityScreen(),
-          2 => const ConversationsListScreen(),
+          2 => ConversationsListScreen(
+              // Jika ConversationsListScreen sudah tidak punya callback ini,
+              // hapus parameter ini agar tidak error.
+              ),
           3 => const ProfileScreen(),
           _ => const SizedBox.shrink(),
         };
@@ -437,10 +448,7 @@ class _AddActionSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          Text(
-            'Pilih Aksi',
-            style: AppTextStyles.headlineSmall,
-          ),
+          Text('Pilih Aksi', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 20),
           _ActionOption(
             icon: Icons.add_location_alt_rounded,
@@ -516,9 +524,7 @@ class _ActionOption extends StatelessWidget {
                 children: [
                   Text(
                     label,
-                    style: AppTextStyles.titleSmall.copyWith(
-                      color: color,
-                    ),
+                    style: AppTextStyles.titleSmall.copyWith(color: color),
                   ),
                   const SizedBox(height: 2),
                   Text(
